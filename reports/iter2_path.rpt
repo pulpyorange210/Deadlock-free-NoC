@@ -1,0 +1,197 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.1 (win64) Build 6140274 Thu May 22 00:12:29 MDT 2025
+| Date         : Fri Sep  4 06:16:42 2026
+| Host         : tripi running 64-bit major release  (build 9200)
+| Command      : report_timing -max_paths 3 -delay_type max -file reports/iter2_path.rpt
+| Design       : mesh_top_timing
+| Device       : 7k70t-fbv676
+| Speed File   : -1  PRODUCTION 1.12 2017-02-17
+| Design State : Routed
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Timing Report
+
+Slack (MET) :             0.732ns  (required time - arrival time)
+  Source:                 u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/C
+                            (rising edge-triggered cell FDRE clocked by clk  {rise@0.000ns fall@3.450ns period=6.900ns})
+  Destination:            u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA/WE
+                            (rising edge-triggered cell RAMD32 clocked by clk  {rise@0.000ns fall@3.450ns period=6.900ns})
+  Path Group:             clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            6.900ns  (clk rise@6.900ns - clk rise@0.000ns)
+  Data Path Delay:        5.730ns  (logic 0.940ns (16.404%)  route 4.790ns (83.596%))
+  Logic Levels:           7  (LUT3=1 LUT5=3 LUT6=3)
+  Clock Path Skew:        -0.034ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.638ns = ( 7.538 - 6.900 ) 
+    Source Clock Delay      (SCD):    0.672ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock clk rise edge)        0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=992, unset)          0.672     0.672    u_mesh/u_r0/g_input[1].u_fifo/clk
+    SLICE_X16Y62         FDRE                                         r  u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/C
+  -------------------------------------------------------------------    -------------------
+    SLICE_X16Y62         FDRE (Prop_fdre_C_Q)         0.308     0.980 r  u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/Q
+                         net (fo=8, routed)           0.922     1.902    u_mesh/u_r0/g_input[1].u_fifo/count_reg_n_0_[2]
+    SLICE_X13Y50         LUT3 (Prop_lut3_I0_O)        0.053     1.955 r  u_mesh/u_r0/g_input[1].u_fifo/wr_ptr[1]_i_5__0/O
+                         net (fo=10, routed)          0.708     2.662    u_mesh/u_r2/g_input[3].u_fifo/wr_ptr[1]_i_21
+    SLICE_X14Y61         LUT6 (Prop_lut6_I4_O)        0.053     2.715 r  u_mesh/u_r2/g_input[3].u_fifo/wr_ptr[1]_i_26/O
+                         net (fo=5, routed)           0.506     3.222    u_mesh/u_r2/g_output[3].u_arb/mem_reg_0_3_0_5_i_12__0_0
+    SLICE_X14Y63         LUT6 (Prop_lut6_I0_O)        0.053     3.275 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_19/O
+                         net (fo=4, routed)           0.445     3.720    u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_19_n_0
+    SLICE_X16Y63         LUT5 (Prop_lut5_I0_O)        0.065     3.785 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_12__0/O
+                         net (fo=7, routed)           0.635     4.420    u_mesh/u_r2/g_output[3].u_arb/priority_ptr_reg[1]_2
+    SLICE_X16Y63         LUT5 (Prop_lut5_I2_O)        0.183     4.603 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_17/O
+                         net (fo=4, routed)           0.417     5.020    u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_17_n_0
+    SLICE_X17Y62         LUT5 (Prop_lut5_I4_O)        0.172     5.192 r  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_4__0/O
+                         net (fo=8, routed)           0.444     5.635    u_mesh/u_r2/g_output[3].u_arb/priority_ptr_reg[2]_3
+    SLICE_X17Y61         LUT6 (Prop_lut6_I1_O)        0.053     5.688 r  u_mesh/u_r2/g_output[3].u_arb/mem_reg_0_3_0_5_i_1__0/O
+                         net (fo=44, routed)          0.714     6.402    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/WE
+    SLICE_X22Y54         RAMD32                                       r  u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA/WE
+  -------------------------------------------------------------------    -------------------
+
+                         (clock clk rise edge)        6.900     6.900 r  
+                                                      0.000     6.900 r  clk (IN)
+                         net (fo=992, unset)          0.638     7.538    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/WCLK
+    SLICE_X22Y54         RAMD32                                       r  u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA/CLK
+                         clock pessimism              0.000     7.538    
+                         clock uncertainty           -0.035     7.503    
+    SLICE_X22Y54         RAMD32 (Setup_ramd32_CLK_WE)
+                                                     -0.369     7.134    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA
+  -------------------------------------------------------------------
+                         required time                          7.134    
+                         arrival time                          -6.402    
+  -------------------------------------------------------------------
+                         slack                                  0.732    
+
+Slack (MET) :             0.732ns  (required time - arrival time)
+  Source:                 u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/C
+                            (rising edge-triggered cell FDRE clocked by clk  {rise@0.000ns fall@3.450ns period=6.900ns})
+  Destination:            u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA_D1/WE
+                            (rising edge-triggered cell RAMD32 clocked by clk  {rise@0.000ns fall@3.450ns period=6.900ns})
+  Path Group:             clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            6.900ns  (clk rise@6.900ns - clk rise@0.000ns)
+  Data Path Delay:        5.730ns  (logic 0.940ns (16.404%)  route 4.790ns (83.596%))
+  Logic Levels:           7  (LUT3=1 LUT5=3 LUT6=3)
+  Clock Path Skew:        -0.034ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.638ns = ( 7.538 - 6.900 ) 
+    Source Clock Delay      (SCD):    0.672ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock clk rise edge)        0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=992, unset)          0.672     0.672    u_mesh/u_r0/g_input[1].u_fifo/clk
+    SLICE_X16Y62         FDRE                                         r  u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/C
+  -------------------------------------------------------------------    -------------------
+    SLICE_X16Y62         FDRE (Prop_fdre_C_Q)         0.308     0.980 r  u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/Q
+                         net (fo=8, routed)           0.922     1.902    u_mesh/u_r0/g_input[1].u_fifo/count_reg_n_0_[2]
+    SLICE_X13Y50         LUT3 (Prop_lut3_I0_O)        0.053     1.955 r  u_mesh/u_r0/g_input[1].u_fifo/wr_ptr[1]_i_5__0/O
+                         net (fo=10, routed)          0.708     2.662    u_mesh/u_r2/g_input[3].u_fifo/wr_ptr[1]_i_21
+    SLICE_X14Y61         LUT6 (Prop_lut6_I4_O)        0.053     2.715 r  u_mesh/u_r2/g_input[3].u_fifo/wr_ptr[1]_i_26/O
+                         net (fo=5, routed)           0.506     3.222    u_mesh/u_r2/g_output[3].u_arb/mem_reg_0_3_0_5_i_12__0_0
+    SLICE_X14Y63         LUT6 (Prop_lut6_I0_O)        0.053     3.275 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_19/O
+                         net (fo=4, routed)           0.445     3.720    u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_19_n_0
+    SLICE_X16Y63         LUT5 (Prop_lut5_I0_O)        0.065     3.785 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_12__0/O
+                         net (fo=7, routed)           0.635     4.420    u_mesh/u_r2/g_output[3].u_arb/priority_ptr_reg[1]_2
+    SLICE_X16Y63         LUT5 (Prop_lut5_I2_O)        0.183     4.603 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_17/O
+                         net (fo=4, routed)           0.417     5.020    u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_17_n_0
+    SLICE_X17Y62         LUT5 (Prop_lut5_I4_O)        0.172     5.192 r  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_4__0/O
+                         net (fo=8, routed)           0.444     5.635    u_mesh/u_r2/g_output[3].u_arb/priority_ptr_reg[2]_3
+    SLICE_X17Y61         LUT6 (Prop_lut6_I1_O)        0.053     5.688 r  u_mesh/u_r2/g_output[3].u_arb/mem_reg_0_3_0_5_i_1__0/O
+                         net (fo=44, routed)          0.714     6.402    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/WE
+    SLICE_X22Y54         RAMD32                                       r  u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA_D1/WE
+  -------------------------------------------------------------------    -------------------
+
+                         (clock clk rise edge)        6.900     6.900 r  
+                                                      0.000     6.900 r  clk (IN)
+                         net (fo=992, unset)          0.638     7.538    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/WCLK
+    SLICE_X22Y54         RAMD32                                       r  u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA_D1/CLK
+                         clock pessimism              0.000     7.538    
+                         clock uncertainty           -0.035     7.503    
+    SLICE_X22Y54         RAMD32 (Setup_ramd32_CLK_WE)
+                                                     -0.369     7.134    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMA_D1
+  -------------------------------------------------------------------
+                         required time                          7.134    
+                         arrival time                          -6.402    
+  -------------------------------------------------------------------
+                         slack                                  0.732    
+
+Slack (MET) :             0.732ns  (required time - arrival time)
+  Source:                 u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/C
+                            (rising edge-triggered cell FDRE clocked by clk  {rise@0.000ns fall@3.450ns period=6.900ns})
+  Destination:            u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMB/WE
+                            (rising edge-triggered cell RAMD32 clocked by clk  {rise@0.000ns fall@3.450ns period=6.900ns})
+  Path Group:             clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            6.900ns  (clk rise@6.900ns - clk rise@0.000ns)
+  Data Path Delay:        5.730ns  (logic 0.940ns (16.404%)  route 4.790ns (83.596%))
+  Logic Levels:           7  (LUT3=1 LUT5=3 LUT6=3)
+  Clock Path Skew:        -0.034ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.638ns = ( 7.538 - 6.900 ) 
+    Source Clock Delay      (SCD):    0.672ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock clk rise edge)        0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=992, unset)          0.672     0.672    u_mesh/u_r0/g_input[1].u_fifo/clk
+    SLICE_X16Y62         FDRE                                         r  u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/C
+  -------------------------------------------------------------------    -------------------
+    SLICE_X16Y62         FDRE (Prop_fdre_C_Q)         0.308     0.980 r  u_mesh/u_r0/g_input[1].u_fifo/count_reg[2]/Q
+                         net (fo=8, routed)           0.922     1.902    u_mesh/u_r0/g_input[1].u_fifo/count_reg_n_0_[2]
+    SLICE_X13Y50         LUT3 (Prop_lut3_I0_O)        0.053     1.955 r  u_mesh/u_r0/g_input[1].u_fifo/wr_ptr[1]_i_5__0/O
+                         net (fo=10, routed)          0.708     2.662    u_mesh/u_r2/g_input[3].u_fifo/wr_ptr[1]_i_21
+    SLICE_X14Y61         LUT6 (Prop_lut6_I4_O)        0.053     2.715 r  u_mesh/u_r2/g_input[3].u_fifo/wr_ptr[1]_i_26/O
+                         net (fo=5, routed)           0.506     3.222    u_mesh/u_r2/g_output[3].u_arb/mem_reg_0_3_0_5_i_12__0_0
+    SLICE_X14Y63         LUT6 (Prop_lut6_I0_O)        0.053     3.275 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_19/O
+                         net (fo=4, routed)           0.445     3.720    u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_19_n_0
+    SLICE_X16Y63         LUT5 (Prop_lut5_I0_O)        0.065     3.785 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_12__0/O
+                         net (fo=7, routed)           0.635     4.420    u_mesh/u_r2/g_output[3].u_arb/priority_ptr_reg[1]_2
+    SLICE_X16Y63         LUT5 (Prop_lut5_I2_O)        0.183     4.603 f  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_17/O
+                         net (fo=4, routed)           0.417     5.020    u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_17_n_0
+    SLICE_X17Y62         LUT5 (Prop_lut5_I4_O)        0.172     5.192 r  u_mesh/u_r2/g_output[3].u_arb/wr_ptr[1]_i_4__0/O
+                         net (fo=8, routed)           0.444     5.635    u_mesh/u_r2/g_output[3].u_arb/priority_ptr_reg[2]_3
+    SLICE_X17Y61         LUT6 (Prop_lut6_I1_O)        0.053     5.688 r  u_mesh/u_r2/g_output[3].u_arb/mem_reg_0_3_0_5_i_1__0/O
+                         net (fo=44, routed)          0.714     6.402    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/WE
+    SLICE_X22Y54         RAMD32                                       r  u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMB/WE
+  -------------------------------------------------------------------    -------------------
+
+                         (clock clk rise edge)        6.900     6.900 r  
+                                                      0.000     6.900 r  clk (IN)
+                         net (fo=992, unset)          0.638     7.538    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/WCLK
+    SLICE_X22Y54         RAMD32                                       r  u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMB/CLK
+                         clock pessimism              0.000     7.538    
+                         clock uncertainty           -0.035     7.503    
+    SLICE_X22Y54         RAMD32 (Setup_ramd32_CLK_WE)
+                                                     -0.369     7.134    u_mesh/u_r0/g_input[1].u_fifo/mem_reg_0_3_18_23/RAMB
+  -------------------------------------------------------------------
+                         required time                          7.134    
+                         arrival time                          -6.402    
+  -------------------------------------------------------------------
+                         slack                                  0.732    
+
+
+
+

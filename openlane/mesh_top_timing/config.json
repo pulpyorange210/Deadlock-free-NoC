@@ -1,0 +1,20 @@
+{
+    "DESIGN_NAME": "mesh_top_timing",
+    "VERILOG_FILES": [
+        "dir::../../rtl/fifo.v",
+        "dir::../../rtl/route_compute.v",
+        "dir::../../rtl/rr_arbiter.v",
+        "dir::../../rtl/crossbar.v",
+        "dir::../../rtl/router.v",
+        "dir::../../rtl/mesh_top.v",
+        "dir::../../impl/mesh_top_timing.v"
+    ],
+    "CLOCK_PORT": "clk",
+    "CLOCK_NET": "clk",
+    "CLOCK_PERIOD": 20,
+    "FP_PDN_MULTILAYER": true,
+    "PL_TARGET_DENSITY_PCT": 40,
+    "FP_CORE_UTIL": 30,
+    "GRT_ALLOW_CONGESTION": false,
+    "RUN_LINTER": false
+}

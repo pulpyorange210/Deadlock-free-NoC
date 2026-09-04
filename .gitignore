@@ -1,0 +1,9 @@
+# OpenLane run outputs -- 773 MB, regenerable from openlane/*/config.json
+openlane/*/runs/
+
+# Simulation artifacts
+*.vcd
+*.out
+
+# Local agent instructions, not part of the deliverable
+CLAUDE.md
