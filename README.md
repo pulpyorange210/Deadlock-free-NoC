@@ -12,13 +12,16 @@ algorithm's structure rather than from detection and recovery.
 | Setup slack | +0.429 ns at 6.200 ns | +7.384 ns at 20.000 ns |
 | Hold slack | +0.040 ns | +0.11 ns |
 | Area | 989 LUT / 421 FF / 0 BRAM | 8183 cells, 97 190 µm² |
-| Signoff | 0 failing endpoints of 2514 | 0 DRC violations, 0 layout XOR diffs |
+| Signoff | 0 failing endpoints of 2514 | 0 DRC, 0 layout XOR diffs, LVS clean |
 
 Both figures are post-**implementation** (after place and route), measured on an
 identical registered DUT boundary, and both critical paths are internal
 flop-to-flop paths rather than I/O paths. The ASIC run is a single
-loose-constraint pass and LVS was not reached — see
-[`ENGINEERING_LOG.md`](ENGINEERING_LOG.md) for the caveats.
+loose-constraint pass, so 79.3 MHz is a floor rather than the design's ASIC
+speed. LVS is clean — netgen reports no net, device, pin or property
+mismatches. The one open signoff item is 20 antenna violations, worst
+partial/required ratio 3.27 — see [`ENGINEERING_LOG.md`](ENGINEERING_LOG.md)
+D30, D31 and B7 for the caveats.
 
 ## Architecture
 
@@ -137,10 +140,41 @@ vivado -mode batch -source impl/run_impl.tcl \
 ```
 
 ```bash
-# OpenLane / Sky130, via Docker
-docker run --rm -v $PWD:/work -v $PDK_ROOT:/pdk -e PDK_ROOT=/pdk -e PDK=sky130A \
-  efabless/openlane:latest \
-  flow.tcl -design /work/openlane/mesh_top_timing -tag run1 -overwrite
+# OpenLane / Sky130, via Docker.
+#
+# On Windows and macOS hosts, BOTH the design and the PDK must live in
+# container-local volumes. Magic's SPICE extraction is dominated by small-file
+# reads of the PDK, and over a host bind mount each one is a cross-OS RPC: the
+# step does not merely slow down, it fails to finish. Staging both onto the
+# container's own filesystem takes that step from "never completes" to 16.5 s.
+# On a native Linux host the bind mounts are fine and this is unnecessary.
+
+docker volume create noc_work && docker volume create noc_pdk
+
+# PDK: fetch the pinned version straight into the volume. Do not copy it in
+# from the host -- that copy is the same small-file pathology.
+docker run --rm -v noc_pdk:/pdk -e PDK_ROOT=/pdk \
+  --entrypoint sh efabless/openlane:latest -c \
+  'volare enable --pdk sky130 c6d73a35f524070e85faff4a6a9eef49553ebc2b'
+
+# Design: stage in (host read-only so the run cannot write back into the repo)
+docker run --rm -v noc_work:/work -v "$PWD":/host:ro \
+  --entrypoint sh efabless/openlane:latest -c \
+  'cp -r /host/openlane /host/rtl /host/impl /work/ && rm -rf /work/openlane/*/runs'
+
+# Run. -ignore_mismatches is needed because the installed open_pdks revision is
+# one newer than the version pinned in the image.
+docker run --rm -v noc_work:/work -v noc_pdk:/pdk \
+  -e PDK_ROOT=/pdk -e PDK=sky130A efabless/openlane:latest \
+  flow.tcl -design /work/openlane/mesh_top_timing -tag run1 -overwrite \
+           -ignore_mismatches
+
+# Copy results back (bulk writes out to the host are fast; it is the reads in
+# that are pathological)
+docker run --rm -v noc_work:/work -v "$PWD":/host \
+  --entrypoint sh efabless/openlane:latest -c \
+  'cp -a /work/openlane/mesh_top_timing/runs/run1 \
+       /host/openlane/mesh_top_timing/runs/'
 ```
 
 ## Verification

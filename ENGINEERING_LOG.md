@@ -1407,6 +1407,78 @@ numbers will come from the code in the repo. Nothing in C1-C4 found a defect in
 `rtl/` — four assertion families were added and validated against six
 mutations, and the design passed all of them.
 
+
+**D30 — Stage A: the Sky130 flow completes, and LVS is clean.** The Phase 4 row
+had read "routed, DRC and XOR clean, LVS not reached" since the flow stalled in
+Magic's SPICE extraction (B7). With that stall root-caused and fixed, one full
+OpenLane run at the unchanged 20 ns period, tag `run_lvs2`, carried the design
+through every signoff step for the first time.
+
+*Results.* netgen reports `LVS reports no net, device, pin, or property
+mismatches. Total errors = 0`, comparing Magic's LEF-extracted layout netlist
+(`MAGIC_EXT_USE_GDS=0`) against the `vlog2Verilog` powered netlist
+(`LVS_INSERT_POWER_PINS=1`). Magic signoff DRC `COUNT: 0`. KLayout DRC 0.
+KLayout-vs-Magic GDS XOR 0 differences. Magic's extraction feedback file
+`38-spice.ext_feedback.txt` is empty at 0 lines. GDSII written, 27 MB.
+
+*Signoff DRC and the antenna check had never run either.* They sit after `lvs`
+in OpenLane's step order — `gds_magic -> gds_klayout -> lvs -> drc ->
+antenna_check` — so the B7 stall blocked three signoff results, not one. The
+"0 DRC violations" quoted previously came from the routing-stage Magic DRC check
+that runs immediately after detailed routing, which is an earlier and different
+check from signoff DRC. Stage A converted three unknowns into results, and one
+of them is not clean; see D31.
+
+*The baseline reproduced bit-exactly.* Against `run_loose`, with `rtl/` frozen
+at Stage C and the identical pinned PDK
+(`open_pdks c6d73a35f524070e85faff4a6a9eef49553ebc2b`, matching
+`run_loose/PDK_SOURCES`):
+
+| Metric | run_loose | run_lvs2 |
+|---|---|---|
+| Setup slack, max RC corner / Slowest lib | +7.3836 ns | +7.3836 ns |
+| Hold slack, max RC corner / Fastest lib | +0.1112 ns | +0.1112 ns |
+| Fmax at the 20 ns period | 79.26 MHz | 79.26 MHz |
+| Cell count, Yosys | 8183 | 8183 |
+| Chip area, Yosys | 97190.7136 um2 | 97190.7136 um2 |
+| Floorplan | 569.02 x 568.48 | 569.02 x 568.48 |
+
+Every digit matches, so the flow is deterministic across the mount change and
+79.3 MHz stands as the Phase 4 figure. It remains a single loose pass; Stage B
+tightens it.
+
+*Tools.* OpenLane 1.1.1 in `efabless/openlane:latest`, with Yosys, OpenROAD,
+Magic, netgen and KLayout. Full flow wall time 12m27s, exit code 0. Step
+runtimes: SPICE extraction 16.52 s, LVS 8.67 s, signoff DRC 132.29 s, antenna
+check 2.64 s.
+
+**D31 — 20 antenna violations, found the first time the check ever ran.**
+OpenROAD's antenna rule checker ran for the first time in this project
+(`run_lvs2`, step 44) and reports 20 violating pins: 16 on met1, 2 on met2, 2 on
+met3. Worst partial/required ratio is 3.27 — partial 1307.0 against a required
+400.0 — on net `_03645_`, pin `_08627_/A1`, met1. Second and third worst are
+2.83 and 2.64, also met1. The full list is
+`reports/signoff/44-antenna_violators.rpt`.
+
+*Why this was invisible until now.* The antenna check sits after `lvs` in the
+step order, so the B7 extraction stall prevented it from ever running (D30). It
+is not a regression — nothing about the design changed. It is a result that was
+never previously obtained.
+
+*Status: open, folded into Stage B.* OpenLane does not fail the flow on antenna
+violations by default, which is why `run_lvs2` completed with exit code 0
+despite them. Recording the finding here rather than leaving it silent, per the
+Phase 5 rule that gaps are written up rather than passed over. The standard
+remedies — raising `GRT_ANTENNA_ITERS`, or diode insertion via
+`DIODE_INSERTION_STRATEGY` — cost area and are an implementation trade-off, not
+an RTL change, so `rtl/` stays frozen either way and this does not invalidate
+Stage A or B. Decided: carry it into Stage B rather than fix it in isolation,
+because Stage B is already trading area against period and the antenna remedies
+draw on the same budget. Every Stage B pass therefore records the antenna
+violator count alongside period, WNS, cell count and area, and D31 closes when
+Stage B does — either at 0 violators or as a written acceptance with the area
+cost of clearing them stated.
+
 ## Bugs
 
 
@@ -1609,3 +1681,55 @@ in module mesh_top`, 0 problems, 0 latches — this one is meaningful. Flattened
 run on the positive control: **`Found 1 SCCs in module mesh_top`**. So the mesh
 ready path is loop-free, D4's reasoning holds at mesh level and not just at
 router level, and the check that says so can actually fail.
+
+**B7 — Magic's SPICE extraction hung on the PDK mount, not on the design
+directory.**
+
+*Symptom.* The Sky130 flow reached step 38, `Magic Spice Export from LEF`, and
+never returned. `38-spice.log` stopped growing at 51,720 bytes with the final
+line `Processing mesh_top_timing`. Every earlier step, including detailed
+routing, routing-stage DRC and GDS XOR, completed normally. Because
+`run_lvs_step` is `run_magic_spice_export` followed by `run_lvs`, and `drc` and
+`antenna_check` follow `lvs`, this single hang withheld three signoff results
+(D30, D31).
+
+*Caught by.* Reading `/proc/<pid>` of the live Magic process inside the running
+container, after a second run reproduced the identical stall.
+
+*Root cause.* Magic's extraction is dominated by small-file reads of the PDK,
+and the PDK was mounted from Windows over Docker Desktop's 9P/drvfs transport —
+`/proc/mounts` inside the container showed
+`C:\134 /pdk 9p ro,...,msize=65536`. Every such read is a cross-OS RPC. The
+earlier diagnosis blamed the *design* directory's I/O and prescribed moving the
+design into a container-local volume. That was the wrong mount. Run `run_lvs1`
+did exactly that — design on ext4, PDK still on 9P — and stalled at the same
+step, `38-spice.log` frozen at 51,719 bytes on the same `Processing
+mesh_top_timing` line. Moving the design roughly halved the time taken to
+*reach* the stall, 11m39s to about 6m, and moved the stall itself not at all.
+
+*Evidence at the stall.* Magic's `wchan` was `p9_client_rpc`. 5,196,745
+voluntary context switches against 37 involuntary. 13,650 jiffies of system time
+against 552 of user time — 96% of its life in the kernel awaiting 9P round
+trips, not computing. `/work` was `ext4` in that same container, so the design
+directory was demonstrably not the bottleneck.
+
+*Fix.* Put the PDK in a container-local volume too. Copying it across 9P was
+itself the same pathology: 2.2 GB moving at 10-15 MB/min, extrapolating to
+2.5-3.5 hours. So `volare` fetched the identical pinned version straight into
+the volume over the network in about a minute —
+`volare enable --pdk sky130 c6d73a35f524070e85faff4a6a9eef49553ebc2b`, the exact
+hash recorded in `run_loose/PDK_SOURCES`. The PDK is therefore provably
+unchanged and the reproduced numbers remain comparable to the baseline.
+
+*Before/after.* Step 38, SPICE extraction: on 9P, never completed — observed
+past 25 minutes with zero log growth and confirmed blocked in 9P RPC, in two
+independent runs. On ext4: **16.52 seconds**. netgen LVS immediately after:
+8.67 seconds. Full flow 12m27s, exit code 0, LVS `Total errors = 0`.
+
+*Asymmetry worth recording.* The 9P penalty is on small-file reads, not
+throughput. Copying the 854 MB of finished run output back out to Windows took
+11 seconds. Many small reads are pathological; bulk writes are fine. This is why
+"copy in, run local, copy out" works at all.
+
+*Tools.* Docker Desktop 4.87.0 with Engine 29.7.2, OpenLane 1.1.1, Magic,
+netgen, volare.
