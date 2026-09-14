@@ -90,11 +90,32 @@ iverilog -g2012 -o sim.out tb/tb_router.v rtl/router.v rtl/fifo.v \
          rtl/route_compute.v rtl/rr_arbiter.v rtl/crossbar.v
 vvp sim.out
 
-# Full-mesh regression: all seven required test cases, 49 assertions
+# Full-mesh regression: seven required cases + HOL, reset and latency, 109 assertions
 iverilog -g2012 -o sim.out tb/tb_mesh.v rtl/mesh_top.v rtl/router.v rtl/fifo.v \
          rtl/route_compute.v rtl/rr_arbiter.v rtl/crossbar.v
 vvp sim.out
+
+# Parameter sweep. DATA_W and FIFO_DEPTH default to 32 and 4; override either
+# with a two-line prefix file compiled ahead of the bench, since macros persist
+# across files in compilation order. DATA_W must be >= 32 (below that the
+# src/seq/magic payload fields overlap).
+cat > cfg.vh <<'EOF'
+`define CFG_DATA_W 64
+`define CFG_FIFO_DEPTH 8
+EOF
+iverilog -g2012 -o sim.out cfg.vh tb/tb_mesh.v rtl/mesh_top.v rtl/router.v \
+         rtl/fifo.v rtl/route_compute.v rtl/rr_arbiter.v rtl/crossbar.v
+vvp sim.out
 ```
+
+The suite is verified clean at `DATA_W` 32 / 40 / 48 / 64 and `FIFO_DEPTH`
+2 / 4 / 8. The assertion count tracks `FIFO_DEPTH` — 103 at depth 2, 109 at 4,
+121 at 8 — because the backpressure case injects `8*FIFO_DEPTH` flits and
+asserts the arrival endpoint of each.
+
+Under Vivado XSim the same prefix file is passed to `xvlog` ahead of the bench;
+`xvlog -d NAME=VALUE` splits a valued macro on the `=` and fails, so the prefix
+file is the portable mechanism rather than a command-line define.
 
 ```bash
 # Synthesis sanity check. `flatten` matters: without it the loop analysis
@@ -133,8 +154,8 @@ A single scoreboard covers four properties at once — every injected flit is
 recorded against its destination and every ejection must retire an exact match
 at the endpoint where it appeared, so correct destination, payload integrity, no
 duplication and no loss all fall out together, with the scoreboard asserted
-empty at end of test. Last run: **381 flits injected, 381 ejected, 0 outstanding,
-0 unmatched.** Routing order is asserted on the *path* a flit took across the
+empty at end of test. Last run: **2376 flits injected, 2364 ejected, 12 discarded by
+a deliberate mid-traffic reset, 0 outstanding, 0 unmatched.** Routing order is asserted on the *path* a flit took across the
 links, not merely on its arrival — a Y-first route reaches the same endpoint
 over different links, so arrival alone proves nothing.
 

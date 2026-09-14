@@ -15,9 +15,11 @@ FPGA number; 88% of the critical path is routing delay, and the same RTL on an
 ASIC standard-cell process would run several times faster.
 
 Verification is 117 assertions at router level across two coordinate
-configurations and 49 at mesh level covering all seven required test cases, with
-a scoreboard that retired 381 injected flits against 381 ejected, none lost,
-none duplicated, none misdelivered. Everything runs identically under Icarus
+configurations and 109 at mesh level covering all seven required test cases plus
+two head-of-line contention cases and a mid-traffic reset, with a scoreboard
+that retired 2376 injected flits against 2364 ejected and 12 deliberately
+discarded by that reset, none lost, none duplicated, none misdelivered. The
+whole suite re-runs clean at DATA_W 32/40/48/64 and FIFO_DEPTH 2/4/8. Everything runs identically under Icarus
 Verilog and Vivado XSim.
 
 ---
@@ -110,8 +112,9 @@ the arbiter sees them, so a grant is only ever issued for an output that can
 accept. An arbiter that advanced on a stalled or masked request would look
 correct in any test where the receiver is always ready, and would silently lose
 its place whenever an output was blocked. A white-box assertion checks every
-cycle, on all ten arbiters, that the pointer changes only when its output both
-granted and was ready — verified to fail against exactly that defect.
+cycle, on all ten router-level arbiters and, from Phase 5, on all twenty in the
+mesh, that the pointer changes only when its output both granted and was ready
+— verified to fail against exactly that defect.
 
 ### 6. Walk through backpressure end to end.
 
@@ -220,12 +223,23 @@ What it would miss, most important first:
   and no test drives rotational traffic. Deadlock freedom rests on the structural
   argument, not on simulation — a claim of a different kind from everything else
   here.
-- **The compounding-contention margin is untested.** The mesh-level bound is 25
-  grants, two arbitration stages of five, but the measured worst case is 5, so
-  the range from 6 to 25 has never been visited. This is a property of the
-  traffic pattern, not the design: all sources aim at one destination, so
-  contention resolves at a single arbiter with three live requesters and the
-  second stage barely engages.
+- **The compounding-contention margin does not exist.** Previously recorded here
+  as untested, on the reasoning that the bound is 25 and the measured worst case
+  5, so the range 6 to 25 had never been visited. That was wrong, and the error
+  was in the bound rather than the traffic. A 2×2 gives every router two
+  neighbours and therefore three live inputs, not five; no-U-turn caps a cardinal
+  output at two requesters and XY caps an outbound one at a single requester; and
+  the three-way ceiling occurs only at a LOCAL output, where a grant is terminal
+  and cannot be composed with a second contention. Case 5 therefore runs a 2-way
+  stage into a 3-way stage, whose true bound is 5 — exactly the measured value.
+  The metric is saturated, not unexercised, and 25 is a valid but loose upper
+  bound left in place deliberately (D27). What genuinely was untested is
+  head-of-line blocking, which the original suite could not exhibit at all:
+  every case sent each source to one destination, so no input FIFO ever held a
+  stalled head in front of a flit bound elsewhere. Cases 8a and 8b now do
+  (D28), and the per-arbiter monitor covering all twenty mesh arbiters measures
+  a worst wait of 2 grants against the arbiters' bound of 5 — independently
+  confirming the three-requester ceiling D27 derived.
 - No latency assertions — a change adding a pipeline stage everywhere would pass
   every test.
 - One payload width, one FIFO depth, one mesh size. Only coordinate width is
@@ -249,9 +263,14 @@ What does not scale linearly:
   five arbiters live and nothing foldable, so expect appreciably more than four
   times the area for four times the routers.
 - **Latency and the service bound.** Worst-case hops go from 2 to 6, and the
-  per-source bound compounds per arbitration stage — five per hop, so 5² for
-  this mesh and up to 5⁶ across a 4×4. That stops being a useful guarantee well
-  before it stops being true: round-robin bounds each hop, not the path.
+  per-source bound compounds per arbitration stage. The compounding is
+  discontinuous, not smooth. Five per hop assumes five live inputs, which no
+  router in a 2×2 has — every one is a corner with three, so this mesh bounds at
+  5 rather than 5² (D27). A 4×4 has four genuine interior routers with five live
+  inputs each, so five-way arbitration and 5ⁿ per-stage compounding become
+  reachable there for the first time — up to 5⁶ on the longest path. That stops
+  being a useful guarantee well before it stops being true: round-robin bounds
+  each hop, not the path.
 - **Timing.** Routing is already 88% of the critical path at 2.4% device
   occupancy. A larger mesh spreads further across the die and the dominant term
   grows with distance. Registering the links stops being optional.

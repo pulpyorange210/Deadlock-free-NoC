@@ -4,8 +4,11 @@ Four five-port routers, single-flit 34-bit packets (1-bit X, 1-bit Y, 32-bit
 payload). Per input port a 4-entry FIFO; per output port its own round-robin
 arbiter; XY dimension-order routing; on/off backpressure; one clock.
 **173.3 MHz post-implementation on a Kintex-7 FPGA (xc7k70tfbv676-1, −1); WNS
-+0.429 ns at 6.200 ns; hold +0.040 ns; 989 LUT / 421 FF / 0 BRAM.** 166
-assertions, all seven required cases, 381 flits injected and 381 retired.
++0.429 ns at 6.200 ns; hold +0.040 ns; 989 LUT / 421 FF / 0 BRAM.** 226
+assertions, all seven required cases plus head-of-line contention, reset under
+load and latency bounds; 2376 flits injected, 2364 retired and 12 discarded by
+a deliberate mid-traffic reset. Re-run clean at four payload widths and three
+FIFO depths.
 Evidence and workings: `RATIONALE_FULL.md`.
 
 **1 — Why XY, and why deadlock-free.** X displacement resolves fully before any
@@ -41,8 +44,9 @@ while round-robin grants **39/40/40/40/40**. No service versus fair service.
 served before it wins again — at most N grants, measured worst case 4 against a
 bound of 5. The pointer advances only on a grant that actually transferred,
 since requests are masked by the receiver's ready first. A white-box assertion
-checks this every cycle on all ten arbiters, because an arbiter advancing on a
-stalled request looks correct whenever the receiver is always ready.
+checks this every cycle on all ten router-level arbiters and, from Phase 5, on
+all twenty in the mesh, because an arbiter advancing on a stalled request looks
+correct whenever the receiver is always ready.
 
 **6 — Backpressure end to end.** FIFO hits 4 entries → `full` → that port's
 `in_ready` drops → upstream `out_ready` drops → requests for that output are
@@ -90,16 +94,22 @@ together. Routing order is asserted on the path taken, not on arrival, and every
 assertion has been shown to fail against a deliberate RTL mutation. It **cannot
 demonstrate deadlock**: with the cycle made constructible, 382 flits still
 arrived and only the path assertions noticed, so answer 1 rests on the
-structural argument rather than simulation. The 25-grant mesh bound is never
-approached (worst measured 5) because all traffic converges on one destination.
+structural argument rather than simulation. Worst measured wait is 5, which is
+also the *true* structural bound: three live inputs per router means Case 5
+composes a 2-way then a 3-way contention, not 5 × 5. The asserted 25 is a
+valid but loose upper bound, so that metric is saturated, not unexercised (D27).
 No latency assertions, one payload width and depth, no reset-during-traffic.
 
 **11 — Scaling to 4×4.** Only the top-level wiring changes; the router is
 untouched and already runs at the 2-bit coordinates a 4×4 needs. Area will not
 be 4×, because 989 LUTs already reflects corner constant-folding and every
 router in a 2×2 is a corner, whereas a 4×4 has four interior routers with
-nothing foldable. Hops go 2 → 6 and the service bound compounds per stage (5²
-here, up to 5⁶), which stops being useful long before it stops being true.
+nothing foldable. Hops go 2 → 6, and the service bound jumps
+rather than scaling smoothly: those same corners have only three live inputs, so
+the 2×2 bound is 5, not 5². Five-way arbitration first becomes reachable on the
+4×4 interior routers, which is where 5ⁿ per-stage compounding starts applying —
+up to 5⁶ on the longest path. It is a 4×4 property the 2×2 never exhibits (D27),
+and it stops being useful long before it stops being true.
 Timing worsens because routing already dominates, and depth 4 assumes a
 single-cycle link. Deadlock freedom is unaffected: longer rings still each need
 a Y→X turn to close.

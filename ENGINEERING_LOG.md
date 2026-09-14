@@ -599,8 +599,9 @@ retire an exact match at the endpoint it appeared on. End of test asserts the
 scoreboard empty — 381 injected, 381 ejected, 0 outstanding, 0 unmatched.
 Bounded service is measured separately. Routing order is asserted on the
 **path** a flit took across the links, not on arrival. Invariant 3 is checked
-white-box every cycle on all ten arbiters. All of it runs identically under
-Icarus and XSim, and every check has been shown to fail against at least one
+white-box every cycle on all ten arbiters. *(Phase 5: extended to all twenty
+mesh arbiters as well — see D27 and the per-arbiter monitor.)* All of it runs
+identically under Icarus and XSim, and every check has been shown to fail against at least one
 deliberate RTL mutation (D9).
 
 *What it would miss.* Five things, in rough order of how much they should worry
@@ -624,6 +625,14 @@ a reader:
    sources sharing an intermediate link *and* colliding again at the
    destination — would be needed to put pressure on that bound, and it does not
    exist in the suite. The bound is therefore asserted but not probed.
+
+   ***Superseded by D27.*** This item is wrong, and the error is in the bound,
+   not the traffic. Such a pattern cannot be built: a 2×2 gives every router
+   three live inputs, the three-way ceiling occurs only at a LOCAL output where
+   a grant is terminal, and the true bound for this metric is 5 — the measured
+   value. The range 6 to 25 is unreachable by construction, not unvisited. Left
+   in place as written because it is what was believed at the time; D27 carries
+   the enumeration and the correction.
 3. **No off-by-one-cycle or latency assertions.** Tests wait a generous number
    of cycles and then check what arrived. A change that added a pipeline stage
    everywhere would pass every test, so the suite would not notice per-hop
@@ -908,6 +917,495 @@ computed split comparable to the FPGA's 11.5 / 88.5.
 The remaining work to make the frequency comparison fair is the tightening
 passes: two or three runs at reducing periods, as the Vivado flow had. On the
 FPGA that was worth 27.5 MHz with no RTL change. Roughly 45–60 minutes.
+
+**D27 — A 2x2 mesh cannot present a five-way contention; the Case 5 metric is
+already saturating its true structural bound of 5, not sitting 20 grants below a
+bound of 25 (Phase 5, Stage C).**
+
+Stage C set out to build "two full five-way contentions in series" so the
+mesh-level worst-case wait would move off its measured 5 toward the stated bound
+of 25. The topology was enumerated exhaustively before any testbench code was
+written: all 16 source-destination pairs, their XY paths, and for every output
+port in the mesh the set of input ports that can legally hold a flit requesting
+it. The enumerator applies the same routing function `route_compute.v`
+implements and the link table in `mesh_top.v`; it is reproduced at the end of
+this entry.
+
+The pattern was not built. It cannot be built.
+
+*Full path enumeration.* Every legal route in the mesh, as router.input->output:
+
+| src->dst | hops |
+|---|---|
+| ep0->ep0 | r0.LOCAL->LOCAL |
+| ep0->ep1 | r0.LOCAL->EAST, r1.WEST->LOCAL |
+| ep0->ep2 | r0.LOCAL->NORTH, r2.SOUTH->LOCAL |
+| ep0->ep3 | r0.LOCAL->EAST, r1.WEST->NORTH, r3.SOUTH->LOCAL |
+| ep1->ep0 | r1.LOCAL->WEST, r0.EAST->LOCAL |
+| ep1->ep1 | r1.LOCAL->LOCAL |
+| ep1->ep2 | r1.LOCAL->WEST, r0.EAST->NORTH, r2.SOUTH->LOCAL |
+| ep1->ep3 | r1.LOCAL->NORTH, r3.SOUTH->LOCAL |
+| ep2->ep0 | r2.LOCAL->SOUTH, r0.NORTH->LOCAL |
+| ep2->ep1 | r2.LOCAL->EAST, r3.WEST->SOUTH, r1.NORTH->LOCAL |
+| ep2->ep2 | r2.LOCAL->LOCAL |
+| ep2->ep3 | r2.LOCAL->EAST, r3.WEST->LOCAL |
+| ep3->ep0 | r3.LOCAL->WEST, r2.EAST->SOUTH, r0.NORTH->LOCAL |
+| ep3->ep1 | r3.LOCAL->SOUTH, r1.NORTH->LOCAL |
+| ep3->ep2 | r3.LOCAL->WEST, r2.EAST->LOCAL |
+| ep3->ep3 | r3.LOCAL->LOCAL |
+
+*Per-output contention, every output port in the mesh.* The "sources" column is
+which endpoints' traffic can arrive on that input, which is what determines how
+deep a merged stream one input can carry:
+
+| output | requesters | input <- sources |
+|---|---|---|
+| r0.LOCAL | **3** | LOCAL<-{ep0}  NORTH<-{ep2,ep3}  EAST<-{ep1} |
+| r0.NORTH | 2 | LOCAL<-{ep0}  EAST<-{ep1} |
+| r0.EAST  | 1 | LOCAL<-{ep0} |
+| r1.LOCAL | **3** | LOCAL<-{ep1}  NORTH<-{ep2,ep3}  WEST<-{ep0} |
+| r1.NORTH | 2 | LOCAL<-{ep1}  WEST<-{ep0} |
+| r1.WEST  | 1 | LOCAL<-{ep1} |
+| r2.LOCAL | **3** | LOCAL<-{ep2}  EAST<-{ep3}  SOUTH<-{ep0,ep1} |
+| r2.SOUTH | 2 | LOCAL<-{ep2}  EAST<-{ep3} |
+| r2.EAST  | 1 | LOCAL<-{ep2} |
+| r3.LOCAL | **3** | LOCAL<-{ep3}  SOUTH<-{ep0,ep1}  WEST<-{ep2} |
+| r3.SOUTH | 2 | LOCAL<-{ep3}  WEST<-{ep2} |
+| r3.WEST  | 1 | LOCAL<-{ep3} |
+
+*Per output class.*
+
+| Output class | Max requesters | Why |
+|---|---|---|
+| LOCAL (ejection) | **3** | all three live inputs can hold a flit for this router |
+| Cardinal "toward" | **2** | no-U-turn removes the input the link arrives on |
+| Cardinal "away" | **1** | XY forbids the transit flits that would use it |
+
+*Why five-way is impossible.* Two reasons that compound. First, the edge
+tie-offs in `mesh_top.v` leave every router with **three live inputs, not
+five** — r0 has LOCAL/NORTH/EAST, r1 has LOCAL/NORTH/WEST, r2 has
+LOCAL/SOUTH/EAST, r3 has LOCAL/SOUTH/WEST. Each router in a 2x2 has two
+neighbours, not four. The arbiters are instantiated N=5 and their internal bound
+is genuinely 5 grants, but the mesh can never present more than three requests
+to one. Second, XY routing cuts the reachable degree further, per the table
+above: no-U-turn caps a cardinal output at two candidate inputs, and XY caps an
+"away" output at one.
+
+*Why two maximal contentions cannot be composed.* The ceiling of three occurs
+**only at a LOCAL output**, and a LOCAL grant is terminal — the flit ejects and
+never arbitrates again. There is no such thing as winning a 3-way contention and
+then contending again. Two three-way contentions in series is therefore
+impossible for the same structural reason, not merely untested. The deepest
+series structure any flit can experience in this topology is **a 2-way cardinal
+contention followed by a 3-way local contention**, and the diagonal routes
+(ep0->ep3, ep1->ep2, ep2->ep1, ep3->ep0) are the only ones that reach even that:
+1-way, then 2-way, then 3-way.
+
+This is a structural argument of the same kind as the deadlock-freedom argument
+in D17 — a property established by construction over the channel set rather than
+by simulation — and it is worth more than the test it replaces.
+
+*The real bound, and what the measured 5 actually means.* `tb_mesh.v:583` asserts
+`max_wait <= 25`, derived as "two round-robin stages of at most 5 grants each".
+That derivation assumes five-way arbiters at both stages. The reachable
+structure for Case 5's victim (ep0, all four endpoints injecting at ep3) is:
+
+- `r0.LOCAL->EAST` — 1-way, no wait possible
+- `r1.WEST->NORTH` — 2-way against ep1's local injection
+- `r3.SOUTH->LOCAL` — 3-way against WEST<-{ep2} and LOCAL<-{ep3}
+
+Under saturation the r1.NORTH arbiter alternates strictly between its two
+continuously-requesting inputs, so the SOUTH stream arriving at r3 is a 1:1
+ep0/ep1 interleave. The r3.LOCAL arbiter is round-robin over three live inputs,
+so between two SOUTH grants there is at most one WEST grant and one LOCAL grant.
+The worst-case ejection order at ep3 between two ep0 ejections is therefore
+`S(ep0) W(ep2) L(ep3) S(ep1) W(ep2) L(ep3) S(ep0)` — five ejections strictly
+between the two ep0 events.
+
+| Quantity | Value |
+|---|---|
+| Bound asserted at `tb_mesh.v:583` (derived, 5 x 5) | 25 |
+| **True structural bound for this metric** | **5** |
+| Worst measured, Case 5 | **5** |
+
+**Case 5 is already saturating its structural bound exactly.** The gap between 5
+and 25 is an artifact of the derivation, not headroom the design has yet to be
+pushed into, and there was never 20 grants of unexercised margin to find. The
+characterisation in the previous status notes — "the compounding-contention
+margin is unexercised" — was wrong: the margin does not exist.
+
+The `max_wait <= 25` assertion is left exactly as written. It is still sound,
+being a valid upper bound, and Stage C's constraint is to add to the suite
+rather than modify it; retuning a load-bearing test mid-stage is how it rots.
+The real bound is recorded here instead.
+
+*Metric correction — first-class, not a footnote.* The replacement pattern
+(C8b, next entry) deliberately throttles its victim by head-of-line blocking,
+and the victim's end-to-end ejection gap will rise as a direct result. **That
+gap is not starvation.** Round-robin promises bounded wait to an input that is
+*continuously requesting*; it promises nothing whatsoever to an input whose FIFO
+is empty. A victim held back by its own upstream is not being starved by an
+arbiter, and asserting on its ejection gap would manufacture a false finding —
+reporting a defect where the design is behaving exactly as specified.
+
+This is the same class of error as B1, where tb_router's starvation metric was
+undefined for an input that was never served at all and therefore reported
+health while four of five inputs received nothing. Both are the same mistake:
+**a fairness metric evaluated over a window in which the fairness property does
+not apply.** The difference is that B1 was found after the test was written and
+believed correct, and this one was found before any testbench code existed,
+because the bound was derived from the topology first. Deriving the structural
+bound before writing the test is what turned a would-be false positive into a
+design finding.
+
+The consequence for the build: C8b's load-bearing assertions are lossless
+delivery and scoreboard reconciliation under sustained HOL blocking, with the
+ejection gap reported as a measurement only. The fairness property is asserted
+instead by the per-arbiter monitor, which counts grants issued by an arbiter
+while a given input's `req_masked` is held high and ungranted. That formulation
+is immune to offered-load effects by construction, which is precisely why it is
+the right instrument here.
+
+*Documentation corrected in the same pass.* This entry invalidated four shipped
+claims, all repaired alongside it: `CLAUDE.md` Status ("margin is unexercised"),
+`RATIONALE.md` Q10 (false causal clause attributing the low number to
+single-destination convergence), `RATIONALE.md` Q11 (the 5^2 figure for a 2x2;
+the 4x4 claim survives and the discontinuity is now stated explicitly), and the
+same two in `RATIONALE_FULL.md`.
+
+*Enumerator.* Reproduced so the tables above are re-derivable without rerunning
+the build. Port encoding 0 LOCAL, 1 NORTH, 2 EAST, 3 SOUTH, 4 WEST.
+
+    my @R = ([0,0],[1,0],[0,1],[1,1]);           # r0..r3
+    my @PN = ("LOCAL","NORTH","EAST","SOUTH","WEST");
+    sub rid { my($x,$y)=@_; for my $i (0..3){ return $i if $R[$i][0]==$x && $R[$i][1]==$y } -1 }
+    sub route { my($mx,$my,$dx,$dy)=@_;          # mirrors route_compute.v
+      return 2 if $dx>$mx; return 4 if $dx<$mx;
+      return 1 if $dy>$my; return 3 if $dy<$my; return 0 }
+    my %LINK = (1=>[0,1,3], 3=>[0,-1,1], 2=>[1,0,4], 4=>[-1,0,2]);  # out -> dx,dy,in
+    my %req;
+    for my $s (0..3) { for my $d (0..3) {
+      my ($cx,$cy) = @{$R[$s]}; my ($dx,$dy) = @{$R[$d]}; my $in = 0;
+      for (my $g=0; $g<8; $g++) {
+        my $r = rid($cx,$cy); my $o = route($cx,$cy,$dx,$dy);
+        $req{"$r,$o"}{$in}{$s} = 1;
+        last if $o == 0;
+        my ($ddx,$ddy,$nin) = @{$LINK{$o}};
+        $cx += $ddx; $cy += $ddy; $in = $nin;
+      } } }
+    for my $k (sort keys %req) {
+      my ($r,$o) = split /,/, $k; my @ins = sort keys %{$req{$k}};
+      printf "r%s.%-6s %d  %s\n", $r, $PN[$o], scalar(@ins),
+        join("  ", map { "$PN[$_]<-{".join(",", map {"ep$_"} sort keys %{$req{$k}{$_}})."}" } @ins);
+    }
+
+
+**D28 — Per-arbiter monitors on all twenty mesh arbiters, plus C8a/C8b
+head-of-line traffic; D27's enumeration converted from a paper argument into a
+measured one (Phase 5, Stage C).**
+
+Three mechanisms added to `tb/tb_mesh.v`, all running continuously across every
+case in the file, and two new traffic cases. No `rtl/` file was touched, so the
+Phase 3 FPGA and Phase 4 ASIC numbers stand and Stages A/B are not invalidated.
+
+*Scale, before and after.* Icarus, full mesh regression:
+
+| | before | after |
+|---|---|---|
+| assertions | 49 | **96** |
+| flits injected / ejected | 381 / 381 | **2200 / 2200** |
+| outstanding, unmatched | 0, 0 | **0, 0** |
+
+*What was built.*
+
+1. **Per-arbiter bounded-wait monitor**, all 20 arbiters (4 routers × 5
+   outputs). Counts, per arbiter per input, the grants that arbiter issues while
+   that input's request is visible to it and ungranted; asserts the count never
+   exceeds N=5. The wait is counted in *grants issued by that arbiter*, never in
+   cycles: a cycle where the arbiter grants nobody is not a cycle anyone was
+   passed over, and a masked request is not a request. That is what makes the
+   check immune to offered-load effects, which is the whole point of D27's
+   metric correction.
+2. **Invariant 3 monitor**, all 20 arbiters. `priority_ptr` may change only on a
+   cycle where its output both granted and the receiver was ready. This is the
+   mesh-level counterpart of tb_router's T10, which covers only the ten
+   router-level arbiters.
+3. **Requester census**, all 20 arbiters. Records the maximum number of
+   simultaneous *unmasked* requesters each arbiter ever sees, and asserts it
+   against the caps D27 derived by enumeration.
+4. **C8a — uniform all-to-all saturation.** All four endpoints inject every
+   cycle, cycling destination through all four endpoints. First case in the
+   suite where an input FIFO holds flits for *different* output ports, so the
+   first that can exhibit head-of-line blocking at all. Offered load is
+   symmetric under the mesh's rotation group, so the end-to-end gap is a fair
+   measure here and is asserted.
+5. **C8b — targeted compounding contention under HOL blocking.** ep0 cycles
+   `[→ep2,→ep2,→ep2,→ep1]`; ep1 alternates `[→ep2,→ep1]`, feeding both the 2-way
+   contention at r0.NORTH (via r1→r0→r2) and the 3-way contention at r1.LOCAL;
+   ep2 and ep3 stream at ep1, merging at r3.SOUTH. Victim ep0, observed at ep1.
+   The deepest series structure the topology allows (D27).
+
+*Results.*
+
+| Measurement | Value |
+|---|---|
+| C5 worst wait (untouched test) | 5, unchanged — bound 25 still asserted |
+| C8a worst end-to-end gap, any source at any endpoint | **3** (bound 25) |
+| C8b measured gap at ep1: ep0 / ep2 / ep3 | **14 / 4 / 4** |
+| Per-arbiter worst wait, any arbiter, whole run | **2 grants** (bound 5) |
+| C8b flits delivered exactly once under sustained HOL | **619 / 619** |
+
+C8b's 14-versus-4 split is head-of-line blocking made visible: ep0 is throttled
+three-to-one by its own schedule, and its ejection gap rises accordingly while
+ep2 and ep3, which are not throttled, stay at 4. Per D27 that gap is **reported,
+not asserted** — a source held back by its own upstream is not being starved,
+and asserting on it would manufacture a defect where the design is correct. What
+C8b asserts instead is what a sustained stalled FIFO head actually puts at risk:
+invariants 4 and 5, no loss and no duplication. 619 injected, 619 ejected, zero
+unmatched.
+
+*D27 is now measured, not merely argued.* The requester census reproduces the
+enumerated caps **exactly** on all twelve live arbiters — not merely within
+them:
+
+| router | LOCAL | NORTH | EAST | SOUTH | WEST |
+|---|---|---|---|---|---|
+| r0 measured / predicted | 3 / 3 | 2 / 2 | 1 / 1 | 0 / 0 | 0 / 0 |
+| r1 measured / predicted | 3 / 3 | 2 / 2 | 0 / 0 | 0 / 0 | 1 / 1 |
+| r2 measured / predicted | 3 / 3 | 0 / 0 | 1 / 1 | 2 / 2 | 0 / 0 |
+| r3 measured / predicted | 3 / 3 | 0 / 0 | 0 / 0 | 2 / 2 | 1 / 1 |
+
+A second, independent confirmation falls out of the bounded-wait monitor: the
+worst wait at any arbiter across the whole 2200-flit run is **2 grants**, which
+is exactly (3 requesters − 1). Round-robin over k continuously-requesting inputs
+passes an input over at most k−1 times; measuring 2 says the mesh never presented
+a fourth requester to any arbiter, arrived at from a different direction than the
+census. The arbiters' own bound of 5 is unreachable in a 2×2, as D27 argued.
+
+*One correction caught by the Stage C exit criterion.* The monitor as first
+built checked bounded-wait on all 20 arbiters — but `RATIONALE.md` §5's claim is
+specifically about the *pointer-update* property, not bounded wait. As shipped,
+the §5 sentence was false for the mesh. The exit criterion requires fixing the
+monitor to the documentation rather than the documentation to the monitor, so
+the invariant 3 monitor (mechanism 2 above) was added and §5 is now true as
+written. It was caught because `mutS` was caught by tb_router's T10 and by
+nothing at mesh level — a mutation escaping one bench and not the other is what
+exposed the gap.
+
+*Mutation validation.* Every new assertion family has been shown to fail against
+a deliberate RTL mutation, run out-of-tree so no mutated source enters `rtl/`:
+
+| mutation | what it breaks | caught by | evidence |
+|---|---|---|---|
+| `mutB` — fixed priority, rotation removed | invariant 2 | **bounded-wait monitor** | fires cyc 189 naming r3 output 0 inputs 3 and 4; C5 does not notice until cyc 582. Worst wait 312 grants against bound 5 |
+| `mutS` — `req_masked[k][i] = req[i][k]`, arbiter sees unmasked requests | invariant 3 | **invariant 3 monitor** | the only mesh-level check that fires; tb_router T10/T8 also catch it |
+| `mutY` — Y before X in `route_compute.v` | invariant 1 | **D27 requester caps** | r0.EAST, r2.EAST and r3.WEST each measure 2 requesters against a predicted 1; C2 path assertions also fire |
+| `mutR` — `else if (\|grant)` → `else if (\|req)` | **nothing — vacuous** | not catchable | see below |
+
+*`mutR` is provably vacuous, and that is worth recording.* The intended
+invariant 3 mutation at `rr_arbiter.v:62` cannot be caught by any test, because
+it does not change the design. `grant` is the leading-one of `req` after
+rotation, so `grant` is non-zero exactly when `req` is non-zero; `|grant` and
+`|req` are the same expression. Running it produced output **bit-identical** to
+the baseline across all 2200 flits — Compare-Object reported zero differing
+lines. An assertion cannot be validated against a mutation that produces an
+identical design, and a mutation that is believed meaningful but is not would
+have silently certified the monitor as validated when it was not. The real
+invariant 3 defect lives one level up, in where the masking is applied
+(`router.v`, D5), which is what `mutS` mutates and what the new monitor catches.
+
+*Tools.* Icarus 14.0 and Vivado 2025.1 XSim produce identical output — 96
+checks, 0 errors, and the same measured values line for line. Yosys re-run on
+the unchanged `rtl/`: `Found and reported 0 problems`, `Found 0 SCCs`, no
+inferred latches.
+
+**D29 — Stage C2/C3/C4: reset during traffic, parameter sweep, latency bounds.
+Stage C complete; RTL frozen for Stages A and B (Phase 5).**
+
+Three remaining Stage C items built together in `tb/tb_mesh.v`. As with D28, no
+`rtl/` file was touched — so the Phase 3 FPGA and Phase 4 ASIC numbers still
+come from the code in the repo, and Stages A/B may now run against frozen RTL.
+
+*Scale.* Default configuration, Icarus:
+
+| | after D28 | after D29 |
+|---|---|---|
+| mesh assertions | 96 | **109** |
+| flits injected | 2200 | **2376** |
+| ejected / discarded / outstanding / unmatched | 2200 / — / 0 / 0 | **2364 / 12 / 0 / 0** |
+
+---
+
+**C2 — reset during traffic (Case 9).**
+
+*The policy, decided explicitly rather than hand-waved.* A flit accepted into
+the network but not yet ejected when reset asserts **is lost, without
+exception**. `fifo.v` clears `wr_ptr`, `rd_ptr` and `count` on reset and
+deliberately does not clear `mem`; the stale payload is unreachable because the
+pointers and count say the FIFO is empty. Reset means discard, not drain. There
+is no flush protocol and none is in scope.
+
+The scoreboard therefore cannot be carried across a reset — every outstanding
+entry would score as a loss and the end-of-test check would fail on correct
+behaviour. It is purged instead, and **the purge count is asserted non-zero**,
+because a purge of zero would mean the test proved nothing.
+
+That forced a second change. The end-of-test conservation check was
+`total_ejected == sb_n`, which is false the moment a reset legitimately discards
+anything: it failed at 2376 injected against 2364 ejected. It was **not**
+weakened to an inequality. A `sb_discarded` counter was added and the check is
+now `total_ejected + sb_discarded == sb_n` — still exact, with the policy-defined
+loss accounted for by name rather than tolerated.
+
+*Measured at the moment of reset.* Reset is asserted mid-injection with `valid`
+still high on every endpoint; injection is not stopped first, because reset
+landing on an active handshake is the case worth testing.
+
+| Quantity | Value |
+|---|---|
+| FIFOs non-empty when reset asserted | **11 of 20** |
+| flits resident in the mesh | **12** |
+| scoreboard outstanding | **12** |
+| purged by policy | **12** |
+| FIFOs non-empty after reset | **0 of 20** |
+| `priority_ptr` values not zero after reset | **0 of 20** |
+| pre-reset flits ejected after reset (zombies) | **0** |
+| post-reset all-to-all delivered | **16 of 16** |
+
+*Mutation validation.* Two mutations, and the first one is a lesson in what a
+validating mutation has to be.
+
+- `mutFR` — reset removed from `fifo.v` entirely. **Rejected as a validator.**
+  It is too destructive to prove anything: `count` is X from power-up, the
+  design never works at all, and the run dies on a simulation timeout at Case 1.
+  A mutation that breaks everything does not demonstrate that Case 9
+  specifically is load-bearing.
+- `mutFR2` — reset removed but replaced with an `initial` block setting the same
+  three registers. This is the right validator, and it describes a **real
+  hazard**: on an FPGA the bitstream initializes registers exactly this way, so
+  a missing reset is invisible in any test that resets only once at time zero.
+  On an ASIC those registers power up X. `mutFR2` **passes every existing case —
+  C1 through C8** — and fails only at Case 9, on three separate assertions:
+  FIFOs not empty after reset (`r0` input 0 count=2, four others non-zero), an
+  output still asserting valid during reset, and **ZOMBIE FLIT** — something
+  injected before the reset ejected after it, which is stale `mem` being re-read
+  through a pointer that never cleared.
+- `mutPR` — `priority_ptr` reset removed. Caught by the pointer check: all five
+  `r0` arbiters read X after reset.
+
+---
+
+**C4 — latency bounds.**
+
+Every scoreboard entry is stamped with its injection cycle; retirement computes
+end-to-end latency and bins it by hop count, because a 2-hop flit legitimately
+costs more than a 1-hop one and one global bound would hide a regression in the
+cheap case.
+
+*Measured, and the structure is exact.* On an idle mesh the cost is **one cycle
+per hop plus one for ejection**, with zero jitter — min equals max at every hop
+count:
+
+| hops | unloaded (min = max) | loaded min / mean / max | n |
+|---|---|---|---|
+| 0 | 1 | 1 / 2 / 11 | 563 |
+| 1 | 2 | 2 / 6 / 34 | 1176 |
+| 2 | 3 | 3 / 12 / 57 | 625 |
+
+*Two different bounds, for two different things.* `LAT_UNLOADED_BOUND = 3` is
+set to the exact observed worst case on an idle mesh and deliberately **not**
+padded — padding it defeats the purpose, since a single extra pipeline stage
+takes a 2-hop flit from 3 cycles to 5 and must fail. `LAT_LOADED_BOUND = 200` is
+deliberately loose at roughly 3.5x the worst measured 57: loaded latency is
+queueing delay and a function of offered load, so a tight bound there would
+constrain the traffic pattern rather than the design. It exists to catch an
+unbounded stall, not to police jitter.
+
+*Mutation validation.* `mutLAT` adds one pipeline stage on flit visibility in
+`fifo.v` — a newly written flit becomes visible to route compute one cycle late.
+It is safe by construction: it can only ever delay availability, never create a
+phantom, because drain still deasserts through the `count` term. The result is
+the exact regression class the spec named — **functionally correct, measurably
+slower**:
+
+| | baseline | `mutLAT` |
+|---|---|---|
+| 1-hop min | 2 | **3** |
+| 2-hop min | 3 | **4** |
+| unloaded worst | 3 | **6** |
+| flits lost | 0 | **0** |
+| assertions firing | none | **C4 only** |
+
+Every other assertion in the file passes under `mutLAT`: nothing is lost,
+nothing is duplicated, the scoreboard reconciles, the arbiters stay in bounds.
+Before C4 existed, this mutation was invisible to the entire suite.
+
+---
+
+**C3 — parameter sweep.**
+
+*One source change was needed first.* `mk_flit` built the payload by
+concatenation as `{dx, dy, src, seq, MAGIC}`, which is exactly 32 bits and
+therefore silently mis-sized the moment `DATA_W` moved off 32 — the testbench
+itself carried the bug class the sweep exists to hunt. It now writes the payload
+by field position (`src` top 8 bits, `seq` next 16, `MAGIC` bottom 8, zero
+padding between), correct at any `DATA_W >= 32`. Below 32 the fields would
+overlap; that is the documented floor.
+
+Configuration is by prefix file rather than command-line define — a two-line
+`.vh` compiled ahead of the testbench, since macros persist across files in
+compilation order. Icarus accepts `-DCFG_DATA_W=64`, but Vivado's `xvlog -d`
+splits a valued macro on the `=` and fails with `Can not find file: 64`. The
+prefix file works identically in both and needs no define support at all.
+
+*Results — seven configurations, all passing:*
+
+| DATA_W | FIFO_DEPTH | result |
+|---|---|---|
+| 32 | 2 | PASS (103 checks) |
+| 32 | 4 | PASS (109 checks) |
+| 32 | 8 | PASS (121 checks) |
+| 40 | 2 | PASS (103 checks) |
+| 48 | 4 | PASS (109 checks) |
+| 64 | 4 | PASS (109 checks) |
+| 64 | 8 | PASS (121 checks) |
+
+The check count tracks `FIFO_DEPTH` because Case 6 injects `8*FIFO_DEPTH` flits
+and asserts the endpoint of each. Invariant 6's claim — that scaling is an
+instantiation change, not a rewrite — is now tested across four payload widths
+and three FIFO depths rather than asserted.
+
+*Mutation validation — and this is the one that shows the sweep earns its keep.*
+`mutW` changes one line of `route_compute.v` from
+`flit[DATA_W +: Y_W]` to `flit[32 +: Y_W]` — the classic hardcoded magic width,
+and precisely what invariant 6 forbids.
+
+| config | `mutW` result |
+|---|---|
+| DATA_W=32 | **PASS, 109 checks, 0 errors** |
+| DATA_W=48 | FAIL, 15 errors |
+| DATA_W=64 | FAIL, 48 errors |
+
+At the default configuration the bug is completely invisible — every one of the
+109 assertions passes, including all of D28's monitors. Only running at another
+width exposes it. That is the entire argument for the sweep, demonstrated rather
+than asserted.
+
+---
+
+*Stage C exit criterion, discharged.* `RATIONALE.md` §5 and the D22 note claim
+the white-box pointer check covers all twenty mesh arbiters. Verified against
+the landed testbench: 20 `priority_ptr` taps, 20 `req_masked` taps, 20 requester
+census taps, `ARB_N = 20`. The claims are true as written; neither was
+retrofitted.
+
+*Tools.* Icarus 14.0 and Vivado 2025.1 XSim agree. Yosys on the unchanged
+`rtl/`: `Found and reported 0 problems`, `Found 0 SCCs`, no inferred latches.
+
+*Stage C is complete. RTL is frozen.* Stages A and B may now run, and their
+numbers will come from the code in the repo. Nothing in C1-C4 found a defect in
+`rtl/` — four assertion families were added and validated against six
+mutations, and the design passed all of them.
 
 ## Bugs
 
