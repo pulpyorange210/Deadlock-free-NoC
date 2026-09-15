@@ -101,7 +101,10 @@ structural argument rather than simulation. Worst measured wait is 5, which is
 also the *true* structural bound: three live inputs per router means Case 5
 composes a 2-way then a 3-way contention, not 5 × 5. The asserted 25 is a
 valid but loose upper bound, so that metric is saturated, not unexercised (D27).
-No latency assertions, one payload width and depth, no reset-during-traffic.
+The gaps that were real — no latency assertions, a single payload width and FIFO
+depth, no reset under traffic — are now closed (D29). What remains is the
+deadlock limit above, accepted as a finding rather than fixed, because the
+property is quantified over all traffic while simulation only samples it (D34).
 
 **11 — Scaling to 4×4.** Only the top-level wiring changes; the router is
 untouched and already runs at the 2-bit coordinates a 4×4 needs. Area will not

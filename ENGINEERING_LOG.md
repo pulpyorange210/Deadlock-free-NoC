@@ -28,8 +28,9 @@ block RAM, so the depth costs no BRAM at all.
 **D4 — `full` does not bypass a simultaneous pop.** `full` is
 `count == DEPTH` on the registered occupancy count only. Making `full` depend on
 `rd_en` would let a router's upstream `ready` depend on that router's own grant,
-which depends on `ready` — the combinational loop CLAUDE.md flags in the
-backpressure path. Cost: one buffer slot of throughput at the full mark. Benefit:
+which depends on `ready` — the combinational loop the backpressure path is
+structurally prone to, and the one hazard in this design that simulation would
+not reliably report. Cost: one buffer slot of throughput at the full mark. Benefit:
 the loop cannot exist by construction rather than being broken by a register
 after the fact. Vivado synthesis reports 0 combinational loops and 0 critical
 warnings on `router.v`, confirming this.
@@ -56,8 +57,9 @@ exactly FIFO_DEPTH=4 accepted flits, all 4 recovered in order).
 XSim as a second opinion.** The machine started with only Vivado 2025.1
 (`C:\Xilinx\2025.1`) installed, so Phase 1 was first brought up on XSim; OSS CAD
 Suite 2026-09-03 (568 MB) was then extracted to `C:\tools\oss-cad-suite`,
-supplying Icarus Verilog 14.0, Yosys 0.68 and GTKWave, so every command in
-CLAUDE.md runs as written. Yosys is also what Phase 4's OpenLane flow uses.
+supplying Icarus Verilog 14.0, Yosys 0.68 and GTKWave, so every simulation and
+synthesis command in `README.md` runs as written. Yosys is also what Phase 4's
+OpenLane flow uses.
 Running both simulators is kept as standing practice: it is what caught B5.
 Environment notes worth not rediscovering — `yosys.exe` fails with
 `error while loading shared libraries: libreadline8.dll` unless
@@ -101,7 +103,7 @@ wildcards itself.** `yosys -p "read_verilog rtl/*.v; ..."` fails with
 ``ERROR: File `rtl/*.v' not found or is a directory``, because the pattern is
 inside a quoted `-p` string and never reaches the shell. The working form
 passes the files as positional arguments so the shell expands them:
-`yosys -p "hierarchy -top router; ..." rtl/*.v`. That is what CLAUDE.md now
+`yosys -p "hierarchy -top router; ..." rtl/*.v`. That is the form `README.md`
 carries, verified by running it.
 
 **D11 — The Phase 1 regression runs the whole assertion suite twice, at 1-bit
@@ -637,13 +639,29 @@ a reader:
    of cycles and then check what arrived. A change that added a pipeline stage
    everywhere would pass every test, so the suite would not notice per-hop
    latency regressing from 1 cycle to 2.
+
+   ***Closed by D29 (Phase 5, Stage C4).*** Per-flit hop-count and cycle bounds
+   are now asserted, so a uniformly added pipeline stage fails loudly.
 4. **One flit width, one FIFO depth, one mesh size.** DATA_W=32 and
    FIFO_DEPTH=4 throughout. The parameterization is exercised only on coordinate
    width (D11), so a bug that only appears at FIFO_DEPTH=2, at a non-power-of-two
    depth, or at a different payload width would not be found.
+
+   ***Closed by D29 (Phase 5, Stage C3), except for mesh size.*** The full
+   regression now runs clean at DATA_W 32 / 40 / 48 / 64 and FIFO_DEPTH 2 / 4 / 8.
+   Mesh size remains 2×2 by scope (D23 covers what a 4×4 would change).
 5. **No reset-during-traffic test.** Reset is asserted once at the start of each
    run. A flit in flight when reset asserts, or a partially-drained FIFO on reset
    release, is never exercised.
+
+   ***Closed by D29 (Phase 5, Stage C2).*** Reset is now asserted mid-injection
+   with flits in flight, with the discard policy stated and asserted rather than
+   hand-waved: 12 flits deliberately discarded, scoreboard reconciled.
+
+*Status of this list after Phase 5.* Items 3, 4 and 5 are closed by Stage C;
+item 2 was not a gap at all and is superseded by D27; item 1 is the one that
+remains, and it is closed not by a test but as an accepted finding in **D34**,
+which records why no testbench of this shape could close it.
 
 **D23 — Scaling to 4x4: what changes and what breaks (§8 Q11).**
 
@@ -914,9 +932,22 @@ report format and a separate breakdown was not extracted. The claim above rests
 on which individual items are largest and on the load capacitances, not on a
 computed split comparable to the FPGA's 11.5 / 88.5.
 
-The remaining work to make the frequency comparison fair is the tightening
-passes: two or three runs at reducing periods, as the Vivado flow had. On the
-FPGA that was worth 27.5 MHz with no RTL change. Roughly 45–60 minutes.
+*That caveat is now closed as a finding: see D35.* It was promoted rather than
+resolved — the split is not obtainable from this report format at all, and D35
+records the measurement that demonstrates why, plus the Stage B evidence that
+strengthens the qualitative claim above.
+
+The tightening passes this entry called for were run in Stage B, and the result
+is **D32**. There were nine of them rather than the two or three estimated here,
+and they moved the ASIC from 79.26 MHz to **96.61 MHz**, +21.9% with no RTL
+change — within a rounding error of the +21.9% the same discipline bought on the
+FPGA. So the 79.3 MHz in the table above is the **baseline**, superseded as the
+headline ASIC figure by D32's 3.000 ns interior optimum. Everything this entry
+concludes survives that supersession: the node gap, the shift from wire-limited
+to gate-delay-limited, and the bottleneck staying on the same architectural path
+are all properties of the comparison, not of the constraint the ASIC side was
+run at. The one row that is period-dependent is critical path depth, which goes
+17 cells at 20 ns to 13 at 3.000 ns — tabulated in D35.
 
 **D27 — A 2x2 mesh cannot present a five-way contention; the Case 5 metric is
 already saturating its true structural bound of 5, not sitting 20 grants below a
@@ -1067,7 +1098,8 @@ is immune to offered-load effects by construction, which is precisely why it is
 the right instrument here.
 
 *Documentation corrected in the same pass.* This entry invalidated four shipped
-claims, all repaired alongside it: `CLAUDE.md` Status ("margin is unexercised"),
+claims, all repaired alongside it: a "margin is unexercised" line in the
+project's own working notes (a local file, not part of the published repo),
 `RATIONALE.md` Q10 (false causal clause attributing the low number to
 single-destination convergence), `RATIONALE.md` Q11 (the 5^2 figure for a 2x2;
 the 4x4 claim survives and the discontinuity is now stated explicitly), and the
@@ -1621,6 +1653,167 @@ and the frozen `rtl/`. Noted as a recommendation, not run.
 *Tools.* OpenLane 1.1.1, OpenROAD antenna checker and global router, Magic,
 netgen, KLayout, `md5sum`.
 
+**D34 — Finding: the suite cannot demonstrate deadlock, and a simulation of this
+shape never could. Accepted in writing rather than fixed (Phase 5, Stage D).**
+The project's completion criteria require every remaining verification gap to be
+either closed or written up as a finding carrying its evidence and the reason the
+evidence cannot be obtained. This is the first of two. It is recorded as a
+finding rather than a caveat because the limitation is structural: it is not an
+artefact of how much testbench time was spent, and no further testbench work
+removes it.
+
+*The finding.* `tb_mesh.v` produces no evidence for or against deadlock freedom.
+Every deadlock-relevant check it carries is an assertion about the *route a flit
+took*, never about the absence of a cyclic wait.
+
+*The evidence, already on the record.* D18's mutations E and F are the only
+experiments that have ever put a genuine Y→X turn into this mesh:
+
+- **`mutE`** — only r3 (1,1) uses YX, creating one real South→West turn. Caught
+  by exactly one assertion, tb_mesh C2's ep3→ep0 path check, which saw links 5,1
+  instead of 7,3. **381 injected / 381 ejected, no hang.**
+- **`mutF`** — r0 and r3 both use YX, enabling both turns the counter-clockwise
+  ring needs (North→East at r2, South→West at r1), so the channel dependency
+  cycle becomes constructible. Caught by two path assertions, C2 on ep0→ep3 and
+  C2 on ep3→ep0. **382 injected / 382 ejected, no hang, scoreboard reconciled.**
+
+With the structural guarantee deleted, the loss, duplication, misdelivery and
+bounded-wait checks all passed unchanged. The suite did not notice that the
+property it exists to protect had been removed.
+
+*Why the evidence cannot be obtained.* Two independent reasons, either one
+sufficient.
+
+1. **Deadlock freedom is universally quantified over traffic; simulation
+   samples.** A cyclic wait needs all four ring channels held simultaneously with
+   full FIFOs and every holder blocked on the next. `mutF` makes that state
+   reachable, but reaching it requires rotational traffic that saturates the ring,
+   and "the suite ran without hanging" over a finite stimulus is not evidence that
+   no stimulus hangs. Adding a rotational pattern and a watchdog would move the
+   boundary by one pattern, not remove it.
+2. **The project's own standard for an assertion cannot be met here.** D9
+   requires every assertion to have been shown to fail against a deliberate RTL
+   mutation, on the grounds that an assertion which has never failed is not
+   evidence. A hang watchdog against the real RTL can never fire, because XY makes
+   the cycle unconstructible — that is the theorem, not a test result. Make it fire
+   by combining `mutF` with rotational traffic and what has been demonstrated is
+   that *the mutant* deadlocks, which is a property of the mutant. Neither
+   configuration yields a statement about the shipped design.
+
+*What the claim rests on instead, and why that is stronger rather than weaker.*
+D17: XY resolves all X displacement before any Y movement, so a packet already
+moving in Y has no X request left to make; each of the two rings around the
+square needs a Y→X turn to close; both are unreachable; the channel dependency
+graph is therefore acyclic and deadlock is impossible by construction rather than
+improbable in practice. That is a statement over all traffic patterns, which is
+strictly more than any finite simulation can return, and it is why the design
+carries no timeout, no detection and no recovery. Stated honestly: deadlock
+freedom here is argued structurally, and simulation corroborates it only in the
+weak sense that nothing ever hung.
+
+*What would actually close it, and why it was not done.* Formal property
+checking — a bounded model check over the channel dependency graph, or symbolic
+reachability over the ready/valid handshake — is the right instrument for a
+universally-quantified property, and it would return the same answer D17 argues
+by hand. It is outside this build's scope. Recording that the correct instrument
+exists and was not used is part of the finding; omitting it would overstate what
+the project establishes.
+
+*What this does not diminish.* `mutE` and `mutF` earn their place regardless.
+They are what establishes that the **path** assertions, and only the path
+assertions, are load-bearing for routing order — the scoreboard is blind to a
+dimension-order change because a Y-first route reaches the same endpoint over
+different links. They are also why RATIONALE §2 can say that what breaks under a
+forbidden turn is *possibility*, not function.
+
+*Where a reader meets this.* Stated in `RATIONALE.md` §10, `RATIONALE_FULL.md`
+§10 and `README.md` under "The testbench is itself tested", so the limitation
+appears beside the mutation table that produced it rather than only here.
+
+*Status.* **Accepted, not fixed.** *Tools.* Icarus Verilog 14.0 and Vivado XSim
+(the D18 mutation runs). Nothing was re-run for this entry.
+
+**D35 — Finding: the exact ASIC logic-versus-routing split is not obtainable in
+this report format, measured rather than asserted. D26's caveat closes (Phase 5,
+Stage D).** The second of the two gaps that close as findings.
+
+*The finding.* There is no Sky130 figure comparable to the FPGA's logic 0.640 ns
+(11.5%) / routing 4.903 ns (88.5%) from D15, and none can be produced from the
+reports this flow writes without re-deriving each cell arc's delay-versus-load
+sensitivity by hand. This is not a flag that was left unset.
+
+*Why. OpenSTA's path format attributes net RC to the driving cell.* Each cell row
+carries a delay computed against the capacitance of the net it drives, so the
+wire's contribution is already inside the cell number. The separate net rows
+carry only the interconnect propagation OpenSTA attributes on its own, and on
+this design that is negligible.
+
+*Measured, so the claim is evidence and not an excuse.* Summing the net-delay
+column across the entire data path of the Slowest-corner critical path, launch
+flop Q to capture flop D, in the baseline run and the chosen Stage B point:
+
+| Run | Constraint | Data-path cells | Summed net delay | Implied "routing" share |
+|---|---|---|---|---|
+| `run_lvs2` | 20.000 ns | 17 | 0.04 ns | 0.4% |
+| `sb_03p000` | 3.000 ns | 13 | 0.03 ns | 0.3% |
+
+Taken at face value those say the ASIC path is 99.6–99.7% logic against the
+FPGA's 11.5%. That is not a measurement of the design; it is the report format.
+The largest single net delay anywhere on the 3.000 ns path is **0.01 ns**,
+against a largest cell arc of **1.51 ns** — which is a sharper statement of
+"gate-delay-limited" than D26 could make, and simultaneously the reason the
+percentage split is unusable in the direction the FPGA-versus-ASIC comparison
+needs.
+
+*The qualitative finding stands, and Stage B strengthened it.* Both runs launch
+from the **same** flop, `_13182_` — the FIFO read-pointer bit whose `mux4` select
+starts the path (D25). The tightening remapped the cone to fewer, higher-drive
+stages:
+
+| | 20.000 ns (`run_lvs2`) | 3.000 ns (`sb_03p000`) |
+|---|---|---|
+| Data-path cells | 17 | 13 |
+| Of which buffers / delay cells | 5 | 3 |
+| Real logic stages | 12 | 10 |
+| Cell types, in path order | `mux4_1`, `buf_2`, `nand4b_1`, `mux2_1`, `mux4_2`, `and2_1`, `a221o_1`, `a21o_2`, `and2_1`, `or3_1`, `buf_2`, `nand2_1`, `or3_1`, `buf_2`, `buf_4`, `mux2_1`, `clkbuf_1` | `mux4_2`, `and4b_1`, `mux2_1`, `a211o_4`, `and4b_1`, `a221o_1`, `a21o_4`, `dlygate4sd1_1`, `clkbuf_2`, `and3_1`, `a221o_2`, `mux2_1`, `clkbuf_1` |
+| Largest cell arc | `mux4_1` 1.61 ns | `mux4_2` 1.51 ns |
+
+The endpoint differs — `_13444_` at 20 ns, `_13384_` at 3.000 ns — so this is the
+same cone, not a re-identified endpoint, and it is stated as such.
+
+*D26's endpoint identification, corroborated directly.* D26 named the 20 ns path
+as ending in r2's SOUTH input FIFO. That was inference at the time; the
+`run_lvs2` gate-level netlist settles it, mapping `_13444_` to
+`u_mesh.u_r2.g_input[3].u_fifo.mem[1][4]` — router 2, input port 3 (SOUTH, per
+D1), FIFO storage slot 1, bit 4. The inference was correct.
+
+*A claim that had run ahead of the log, now backed.* `RATIONALE.md` §9 and
+`RATIONALE_FULL.md` already state that the Stage B path is "13 standard cells
+deep" and that tightening cut it from 17. Stage B recorded frequency, area and
+cell count but not path depth, so until this entry those two figures had no log
+entry behind them. They are now verified against the committed Slowest-corner
+reports of both runs. No flow was re-run and no number changed.
+
+*What would close it properly, and why it was not attempted.* A genuine split
+needs per-net parasitics attributed separately from cell arcs: read the SPEF,
+re-derive each arc's delay at zero load, and difference the two. That is a
+modelling exercise rather than a report option, and it would need the
+`sb_03p000` gate-level netlist and SPEF. Not attempted, and recorded as not
+attempted.
+
+*Evidence kept in the repo.* The OpenLane run directories are gitignored (~800 MB
+across eleven runs, regenerable from `openlane/mesh_top_timing/config.json`), so
+Stage E extracted what this entry and D26, D32 and D33 cite into
+`reports/asic/` — per-run `metrics.csv`, and for both runs above the
+Slowest-corner worst path pulled out of an 18–21 MB `multi_corner_sta.max.rpt`.
+The two tables here are re-derivable from
+`reports/asic/*_slowest_critical_path.rpt` without re-running anything.
+
+*Status.* **Accepted as not obtainable in this report format.** D26's caveat
+paragraph now points here. *Tools.* OpenSTA multi-corner reports from the
+`run_lvs2` and `sb_03p000` run directories, `awk` for the column sums, and the
+`run_lvs2` gate-level netlist for the flop mapping. No flow was re-run.
+
 ## Bugs
 
 
@@ -1628,8 +1821,9 @@ netgen, KLayout, `md5sum`.
 
 *Symptom.* The Phase 1 bench passed 38 of 38 checks against `mutB`, an
 `rr_arbiter` mutated to plain fixed priority
-(`assign grant = req & (~req + ONE_N)`, rotation removed). CLAUDE.md names the
-sustained-load test as the one thing fixed priority must fail.
+(`assign grant = req & (~req + ONE_N)`, rotation removed). The sustained-load
+test is the one test fixed-priority arbitration must fail — that is the entire
+reason it exists — so a pass against `mutB` was a failure of the bench.
 
 *Caught by.* Mutation testing under XSim, not by the bench itself — this is the
 bug the bench had, so no test reported it. Instrumenting T7 with a per-source
@@ -1710,8 +1904,10 @@ out of 171 grants, 191 flits injected and 191 ejected.
 
 *Symptom.* Vivado synthesis of `router.v` at the default parameters reported 44
 flip-flops. Hand count is 5 FIFOs × (2 wr_ptr + 2 rd_ptr + 3 count) + 5 arbiters
-× 3-bit `priority_ptr` = 35 + 15 = 50. CLAUDE.md requires the flop count to
-match a hand count, so the 6-flop gap had to be explained rather than accepted.
+× 3-bit `priority_ptr` = 35 + 15 = 50. Reading a synthesis log includes checking
+that the reported flop count roughly matches a hand count of the storage the
+design is supposed to have, so the 6-flop gap had to be explained rather than
+accepted.
 
 *Caught by.* Vivado 2025.1 `synth_design`, by listing every FLOP_LATCH cell and
 grouping by parent instance.

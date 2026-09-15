@@ -33,7 +33,9 @@ from the achieved critical path. LVS is clean — netgen reports no net, device,
 pin or property mismatches. The one open signoff item is 17 antenna violations,
 worst partial/required ratio 3.46; clearing them was measured to cost 2.71 MHz
 and 5933 extra diode cells while still leaving 3, so they are accepted rather
-than fixed. See [`ENGINEERING_LOG.md`](ENGINEERING_LOG.md) D30–D33, B7 and B8.
+than fixed. See [`ENGINEERING_LOG.md`](ENGINEERING_LOG.md) D30–D33, D35, B7 and
+B8. The full OpenLane run directories are too large to track, so the reports
+those entries cite are extracted into [`reports/asic/`](reports/asic/).
 
 ## Architecture
 
@@ -82,10 +84,10 @@ would need.
 | `tb/` | Self-checking testbenches: `tb_router`, `tb_mesh` |
 | `impl/` | Synthesis-only wrapper and flow scripts (Vivado, OpenLane, OpenSTA) |
 | `openlane/` | OpenLane design config for the Sky130 flow |
-| `reports/` | Vivado timing, path and utilization reports |
+| `reports/` | Vivado timing, path and utilization reports; `reports/asic/` holds the Sky130 signoff evidence |
 | `RATIONALE.md` | One-page answers to the twelve design questions |
 | `RATIONALE_FULL.md` | Long form, with the evidence behind each answer |
-| `ENGINEERING_LOG.md` | 26 design decisions and 6 bug entries, written during the build |
+| `ENGINEERING_LOG.md` | 35 design decisions and 8 bug entries, written during the build |
 
 Nothing that is not synthesizable goes in `rtl/`. `impl/mesh_top_timing.v` is a
 synthesis-only wrapper that registers every endpoint port so implementation
@@ -209,10 +211,11 @@ A single scoreboard covers four properties at once — every injected flit is
 recorded against its destination and every ejection must retire an exact match
 at the endpoint where it appeared, so correct destination, payload integrity, no
 duplication and no loss all fall out together, with the scoreboard asserted
-empty at end of test. Last run: **2376 flits injected, 2364 ejected, 12 discarded by
-a deliberate mid-traffic reset, 0 outstanding, 0 unmatched.** Routing order is asserted on the *path* a flit took across the
-links, not merely on its arrival — a Y-first route reaches the same endpoint
-over different links, so arrival alone proves nothing.
+empty at end of test. Last run: **2376 flits injected, 2364 ejected, 12
+discarded by a deliberate mid-traffic reset, 0 outstanding, 0 unmatched.**
+Routing order is asserted on the *path* a flit took across the links, not merely
+on its arrival — a Y-first route reaches the same endpoint over different links,
+so arrival alone proves nothing.
 
 Everything runs identically under Icarus Verilog and Vivado XSim. Running both
 is deliberate: it is what caught a race in the testbench's own cycle counter.
@@ -238,7 +241,10 @@ consecutive services, which is undefined for an input that is never served.
 Mutation E and F also establish an honest limit: **the suite cannot demonstrate
 deadlock.** With the dependency cycle made constructible, 382 flits still
 arrived with no hang, and only the path assertions noticed. Deadlock freedom
-rests on the structural argument, not on simulation.
+rests on the structural argument, not on simulation — and no testbench of this
+shape could do better, since the property is quantified over all traffic while
+simulation samples it. That limit is recorded as a finding, with what would
+close it, in [`ENGINEERING_LOG.md`](ENGINEERING_LOG.md) D34.
 
 ## Scope
 

@@ -28,8 +28,8 @@ configurations and 109 at mesh level covering all seven required test cases plus
 two head-of-line contention cases and a mid-traffic reset, with a scoreboard
 that retired 2376 injected flits against 2364 ejected and 12 deliberately
 discarded by that reset, none lost, none duplicated, none misdelivered. The
-whole suite re-runs clean at DATA_W 32/40/48/64 and FIFO_DEPTH 2/4/8. Everything runs identically under Icarus
-Verilog and Vivado XSim.
+whole suite re-runs clean at DATA_W 32/40/48/64 and FIFO_DEPTH 2/4/8. Everything
+runs identically under Icarus Verilog and Vivado XSim.
 
 ---
 
@@ -210,6 +210,31 @@ Three fixes, in the order worth doing:
    at 11.5% of the path, shortening the LUT chain buys much less than it appears
    to; the real wins here are fanout and placement locality.
 
+*The same question on Sky130, which changes the emphasis but not the answer.*
+The critical path is architecturally the same there — FIFO read → route and
+arbitrate → crossbar → downstream FIFO write — and the gate-level netlist
+confirms the endpoint the FPGA analysis inferred: r2's SOUTH input FIFO storage.
+What changes is why it is slow. On the FPGA the largest single item is a *net*,
+0.988 ns of routing on a fanout-45 arbiter signal. On Sky130 every large item is
+a *cell arc*, the biggest a `mux4` at 1.51 ns, while the largest net delay
+anywhere on the path is 0.01 ns. The path is gate-delay-limited rather than
+wire-limited, and correspondingly deep: 13 standard cells after the Stage B
+tightening, down from 17 at the loose 20 ns pass, which is where its +21.9% came
+from.
+
+That reorders the fixes by target. Fix 3 is FPGA-specific — on standard cells
+there is no dominant routing net to attack. Fixes 1 and 2 both cut *logic depth*,
+so they are the ones that help on both substrates, and the 13-cell depth is
+direct evidence for them.
+
+One honest limit on this comparison: there is no Sky130 figure comparable to the
+FPGA's 11.5 / 88.5 split. OpenSTA's path format folds each net's RC into the
+delay of the cell driving it, so summing the reported net column over the whole
+path gives 0.03 ns — which would imply a 99.7% logic path and is an artefact of
+the format, not a measurement. The qualitative claim above rests on which
+individual items are largest and on the load capacitances, and the split itself
+is recorded as not obtainable rather than left as an open question (D35).
+
 ### 10. What does the testbench check, and what would it miss?
 
 One scoreboard mechanism covers four properties at once: every injected flit is
@@ -249,11 +274,22 @@ What it would miss, most important first:
   (D28), and the per-arbiter monitor covering all twenty mesh arbiters measures
   a worst wait of 2 grants against the arbiters' bound of 5 — independently
   confirming the three-requester ceiling D27 derived.
-- No latency assertions — a change adding a pipeline stage everywhere would pass
-  every test.
-- One payload width, one FIFO depth, one mesh size. Only coordinate width is
-  exercised across configurations.
-- No reset-during-traffic test.
+The three gaps previously listed here were real, and Phase 5 closed all three
+(D29). They are kept on the record with what closed them, rather than deleted:
+
+- ~~No latency assertions~~ — per-flit hop-count and cycle bounds are now
+  asserted, so a change adding a pipeline stage everywhere fails loudly instead
+  of passing.
+- ~~One payload width, one FIFO depth~~ — the full regression runs clean at
+  `DATA_W` 32 / 40 / 48 / 64 and `FIFO_DEPTH` 2 / 4 / 8. One mesh size is still
+  true, and is a scope decision rather than a gap (§11).
+- ~~No reset-during-traffic test~~ — reset is now asserted mid-injection with
+  flits in flight, against an explicitly stated discard policy: 12 flits
+  deliberately discarded, scoreboard reconciled.
+
+So the deadlock limit above is the only item on this list that stays open, and
+it is accepted as a finding with its evidence and the reason it is unobtainable
+(D34) rather than left dangling.
 
 ### 11. How would this scale to 4×4?
 
