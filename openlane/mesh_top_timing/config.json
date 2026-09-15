@@ -11,7 +11,7 @@
     ],
     "CLOCK_PORT": "clk",
     "CLOCK_NET": "clk",
-    "CLOCK_PERIOD": 20,
+    "CLOCK_PERIOD": 3.000,
     "FP_PDN_MULTILAYER": true,
     "PL_TARGET_DENSITY_PCT": 40,
     "FP_CORE_UTIL": 30,

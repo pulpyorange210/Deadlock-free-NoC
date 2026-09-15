@@ -8,20 +8,32 @@ algorithm's structure rather than from detection and recovery.
 | | FPGA | ASIC |
 |---|---|---|
 | Target | Kintex-7 `xc7k70tfbv676-1` (28 nm) | SkyWater Sky130A (130 nm) |
-| Frequency | **173.3 MHz** | **79.3 MHz** |
-| Setup slack | +0.429 ns at 6.200 ns | +7.384 ns at 20.000 ns |
-| Hold slack | +0.040 ns | +0.11 ns |
-| Area | 989 LUT / 421 FF / 0 BRAM | 8183 cells, 97 190 µm² |
+| Frequency | **173.3 MHz** | **96.6 MHz** |
+| Setup slack | +0.429 ns at 6.200 ns | critical path 10.351 ns, Slowest corner |
+| Hold slack | +0.040 ns | +0.085 ns |
+| Area | 989 LUT / 421 FF / 0 BRAM | 8183 cells, 99 075 µm² |
 | Signoff | 0 failing endpoints of 2514 | 0 DRC, 0 layout XOR diffs, LVS clean |
 
 Both figures are post-**implementation** (after place and route), measured on an
 identical registered DUT boundary, and both critical paths are internal
-flop-to-flop paths rather than I/O paths. The ASIC run is a single
-loose-constraint pass, so 79.3 MHz is a floor rather than the design's ASIC
-speed. LVS is clean — netgen reports no net, device, pin or property
-mismatches. The one open signoff item is 20 antenna violations, worst
-partial/required ratio 3.27 — see [`ENGINEERING_LOG.md`](ENGINEERING_LOG.md)
-D30, D31 and B7 for the caveats.
+flop-to-flop paths rather than I/O paths. The ASIC figure comes from a nine-point
+`CLOCK_PERIOD` bisection, not a single pass: driving the flow at 3.000 ns
+produces the shortest Slowest-corner critical path, 10.351 ns, for 1.94% more
+area than the original 20 ns run — 79.3 MHz to 96.6 MHz, +21.9%, with no RTL
+change. Tightening below 3.000 ns makes the result *worse*, so this is an
+interior optimum rather than a floor.
+
+One caveat matters for reading that number. `CLOCK_PERIOD` behaves as an
+optimisation driver here rather than a signoff constraint, because OpenLane
+optimises at the Typical corner while signoff reports Slowest — about 6.4 ns
+apart on this design. Above a 6.24 ns knee the constraint is inert and the
+implementation does not change at all, so the reported slack at 3.000 ns is
+negative by construction and is not a signoff statement; the frequency comes
+from the achieved critical path. LVS is clean — netgen reports no net, device,
+pin or property mismatches. The one open signoff item is 17 antenna violations,
+worst partial/required ratio 3.46; clearing them was measured to cost 2.71 MHz
+and 5933 extra diode cells while still leaving 3, so they are accepted rather
+than fixed. See [`ENGINEERING_LOG.md`](ENGINEERING_LOG.md) D30–D33, B7 and B8.
 
 ## Architecture
 
@@ -164,6 +176,14 @@ docker run --rm -v noc_work:/work -v "$PWD":/host:ro \
 
 # Run. -ignore_mismatches is needed because the installed open_pdks revision is
 # one newer than the version pinned in the image.
+#
+# EXPECT A NONZERO EXIT AND "Flow failed" at the configured 3.000 ns period.
+# That is the intended result, not a broken setup. OpenLane's own timing check
+# runs at the Typical corner, which 3.000 ns violates by design -- the period is
+# an optimisation driver, not a signoff target (see ENGINEERING_LOG.md B8). The
+# check runs after every signoff step, so LVS, DRC, XOR, the antenna check and
+# reports/metrics.csv are all produced and valid. Read the signed-off frequency
+# from reports/signoff/*-sta-rcx_max/, not from the exit code.
 docker run --rm -v noc_work:/work -v noc_pdk:/pdk \
   -e PDK_ROOT=/pdk -e PDK=sky130A efabless/openlane:latest \
   flow.tcl -design /work/openlane/mesh_top_timing -tag run1 -overwrite \
@@ -180,9 +200,10 @@ docker run --rm -v noc_work:/work -v "$PWD":/host \
 ## Verification
 
 Pass/fail is decided by assertions. **117 assertions** at router level across two
-coordinate configurations, **49** at mesh level covering all seven required
+coordinate configurations, **109** at mesh level covering all seven required
 cases: single-hop, two-hop, simultaneous injection, output contention, sustained
-load, backpressure/FIFO-full, and all-to-all.
+load, backpressure/FIFO-full, and all-to-all — plus head-of-line contention,
+reset under traffic and latency bounds.
 
 A single scoreboard covers four properties at once — every injected flit is
 recorded against its destination and every ejection must retire an exact match

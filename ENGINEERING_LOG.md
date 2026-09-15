@@ -1479,6 +1479,148 @@ violator count alongside period, WNS, cell count and area, and D31 closes when
 Stage B does — either at 0 violators or as a written acceptance with the area
 cost of clearing them stated.
 
+**D32 — Stage B: the ASIC tightening sequence, and why its x-axis is an
+optimisation driver rather than a constraint.** Phase 4's last open item was a
+post-route Fmax obtained by tightening rather than from one loose pass. Nine
+full OpenLane runs, `CLOCK_PERIOD` the only variable, every other knob
+regenerated identically each pass. Pass/fail is scored on setup slack at the
+**max RC corner / Slowest lib** — the corner the 79.26 MHz baseline came from,
+and the one OpenLane itself never checks (B8).
+
+*Result: 79.26 MHz -> 96.61 MHz, +17.35 MHz, +21.9%, with no RTL change and
+1.94% more area.*
+
+| CLOCK_PERIOD | Slowest WNS | Achieved path | Fmax | Synth area (um2) | Post cells | Core area (um2) | Antenna pins | Worst ratio | Hold @ Fastest |
+|---|---|---|---|---|---|---|---|---|---|
+| 20.000 | +7.3836 | 12.6164 | 79.26 | 97190.7136 | 71602 | 323476.4896 | 20 | 3.27 | +0.1112 |
+| 12.000 | -0.6164 | 12.6164 | 79.26 | 97190.7136 | 71602 | 323476.4896 | 20 | 3.27 | +0.1112 |
+| 6.000 | -5.5952 | 11.5952 | 86.24 | 97190.7136 | 70946 | 323476.4896 | 13 | 3.17 | +0.0987 |
+| 4.000 | -6.9118 | 10.9118 | 91.64 | 99081.2768 | 72761 | 329739.9968 | 21 | 2.99 | +0.0884 |
+| 3.500 | -7.0600 | 10.5600 | 94.70 | 99075.0208 | 72351 | 329739.9968 | 13 | 3.43 | +0.0827 |
+| 3.250 | -7.2819 | 10.5319 | 94.95 | 99075.0208 | 72319 | 329739.9968 | 16 | 3.41 | +0.0842 |
+| **3.000** | **-7.3513** | **10.3513** | **96.61** | **99075.0208** | **72220** | **329739.9968** | **17** | **3.46** | **+0.0851** |
+| 2.500 | -8.0882 | 10.5882 | 94.44 | 99075.0208 | 73385 | 329739.9968 | 19 | 3.41 | +0.0297 |
+| 2.000 | -8.6264 | 10.6264 | 94.11 | 99075.0208 | 75279 | 329739.9968 | 14 | 3.42 | -0.0716 |
+
+*The curve has three regions, and only the middle one is a tightening
+sequence.* From 20 ns to about 6.3 ns the implementation does not change at all
+— bit-identical netlist and DEF, 79.26 MHz throughout, because OpenLane's
+optimisers work at the Typical corner where slack is still hugely positive
+(B8). Below that knee, measured at 6.2447 ns, the resizer engages and the
+achieved path falls: 11.5952 ns at 6.000, 10.9118 at 4.000, 10.3513 at 3.000.
+Below 3.000 it **rises again** — 10.5882 at 2.500 and 10.6264 at 2.000 — so the
+sequence has a genuine interior optimum rather than an asymptote.
+
+*The turning point is the interesting part, and it is the §8 Q9 answer.* Past
+the optimum the tool keeps spending area and stops buying speed. Placed
+instances go 72220 -> 73385 -> 75279 from 3.000 down to 2.000 ns, 4.2% more
+cells, while Fmax falls 96.61 -> 94.44 -> 94.11 MHz and final utilisation drops
+40.47% -> 34.75% as the design spreads out. The resizer is buffering paths it
+cannot fix; the added buffers lengthen the very paths they were inserted to
+repair. Area and speed are positively correlated only up to the knee, and
+decouple below it.
+
+*Cost of the 21.9%.* Yosys chip area 97190.7136 -> 99075.0208 um2 (+1.94%),
+core area 323476.4896 -> 329739.9968 um2 (+1.94%), placed instances 71602 ->
+72220 (+0.86%). Yosys cell count is 8183 at every single period — synthesis
+under `SYNTH_STRATEGY "AREA 0"` maps the same cells throughout and the area
+change is cell *sizing*, not cell count. The one synthesis-area step is between
+6.000 and 4.000 ns (97190.7136 -> 99081.2768), so abc's mapping does respond to
+the period, but only once and only below the knee.
+
+*Hold degrades monotonically and is what rules out the bottom of the range.*
+Hold slack at the Fastest corner — the corner that governs hold — falls
++0.1112 -> +0.0851 across the useful range and goes **negative at 2.000 ns**
+(-0.0716). So 2.000 ns is disqualified on hold as well as on frequency. At the
+chosen 3.000 ns it is +0.0851 ns, positive with margin. The separate negative
+min-delay numbers seen at the Slowest corner are an artefact of `set_input_delay`
+being 0.20 x period: the worst hold path migrates off internal logic onto an
+input port as the period shrinks (internal `_13399_`->`_13400_` at 20 ns,
+`ep_in_flit[87]` at 12 ns, `ep_in_flit[82]` at 6 ns). Internal hold is not
+degrading; the constraint on the wrapper's ports is.
+
+*Signoff held at every point in the sequence.* All nine runs: netgen LVS clean,
+Magic signoff DRC 0, KLayout DRC 0, GDS XOR 0 differences, tritonRoute 0
+violations. Tightening bought 21.9% without breaking a single signoff check.
+
+*Antenna violations do not track the period.* Counts across the sweep are 20,
+20, 13, 21, 13, 16, 17, 19, 14 — no monotonic trend in either direction, so the
+concern that tighter constraints would lengthen metal runs and multiply
+violations is not borne out. Worst partial/required ratio does drift up slightly,
+3.27 at baseline to 3.46 at the chosen point. The count is dominated by routing
+detail rather than by constraint. Verdict and closure of D31 is D33.
+
+*Reproducibility.* The repo's `openlane/mesh_top_timing/config.json` carries
+`CLOCK_PERIOD` 3.000 so a clone reproduces the headline run. Flow wall time per
+pass ran 12m27s at 20 ns to 14m07s at 3 ns, rising with the extra resizer and
+routing work.
+
+*Tools.* OpenLane 1.1.1 in `efabless/openlane:latest`, Yosys, OpenROAD resizer
+and OpenSTA, Magic, netgen, KLayout. Both design and PDK in container-local
+volumes throughout (B7).
+
+**D33 — The 20 antenna violations are accepted, with the cost of clearing them
+measured rather than estimated. D31 closes.** D31 required either 0 violators or
+a written acceptance stating what clearing them would cost. Both remedies were
+run at the chosen 3.000 ns operating point so the cost is measured.
+
+*Starting point.* At 3.000 ns the design has **17 violating pins across 16 nets**,
+worst partial/required ratio **3.46** — partial 1382.78 against a required 400.0
+— on net `_03630_`, pin `_08617_/A1`, met1. The count is 17 rather than D31's 20
+because the layout changed with the period; across the whole Stage B sweep the
+count moved between 13 and 21 with no trend (D32).
+
+*Remedy 1, more global-route repair iterations: no effect whatsoever.*
+`GRT_MAX_DIODE_INS_ITERS` 1 -> 5, everything else identical. The run's
+`config.tcl` confirms the value took (`set ::env(GRT_MAX_DIODE_INS_ITERS) "5"`),
+and the routed DEF came back **bit-identical**, md5 `65b665c8...` against
+`65b665c8...`. Same 17 violations, same 96 diodes, same slack. OpenROAD's
+global-route antenna repair converges in a single iteration on this design, so
+the iteration count is not a lever. Recording this because it looks like the
+obvious first knob and it is inert.
+
+*Remedy 2, heuristic diode insertion: works, and costs more than it is worth.*
+`RUN_HEURISTIC_DIODE_INSERTION` 1 with `DIODE_ON_PORTS "in"`:
+
+| Metric | `sb_03p000` | `sb_03p000_heur` | Delta |
+|---|---|---|---|
+| Antenna violating pins | 17 | **3** | -14 |
+| Worst partial/required ratio | 3.46 | 2.05 | -1.41 |
+| Setup WNS, Slowest | -7.3513 | -7.6492 | -0.2979 |
+| Achieved path | 10.3513 ns | 10.6492 ns | +0.2979 |
+| **Fmax** | **96.61 MHz** | **93.90 MHz** | **-2.71** |
+| Diode cells | 96 | **6029** | +5933 |
+| Placed instances | 72220 | 75543 | +4.6% |
+| Final utilisation | 40.4748% | 44.9774% | +4.50 pts |
+| Flow wall time | 14m07s | **6h17m46s** | 27x |
+
+Signoff stayed clean throughout — LVS clean, Magic DRC 0, KLayout DRC 0, XOR 0,
+hold at Fastest +0.0873 ns.
+
+*Verdict: accept the violations.* Clearing costs **2.71 MHz, 2.8% of the
+frequency the whole Stage B bisection was run to win**, plus 5933 extra diode
+cells. At the LEF size of `sky130_fd_sc_hd__diode_2`, 0.920 x 2.720 um, that is
+**14846 um2 of added diode area** — 4.5% of the 329740 um2 core. And it still
+does not reach zero: 3 violations remain, one of them at ratio 1.00, exactly on
+the limit. Paying a fifth of the stage's frequency gain for a partial fix is the
+wrong trade, so the violations stand as a documented open item.
+
+*A wrong estimate, corrected in the open.* Before running remedy 2 the cost was
+estimated at roughly 17 diodes, about 43 um2, on the assumption that a diode is
+inserted per violating pin. The measurement is **6029 diodes and 14846 um2**,
+some 350x that estimate, because heuristic insertion places diodes on every pin
+meeting the threshold rather than only on violators. The estimate was wrong in
+kind, not just in magnitude, which is the reason D31 demanded a measured cost
+rather than an argued one.
+
+*What would actually fix this.* Not a diode strategy but shorter met1 runs on
+the offending nets — local jogging or promoting those routes to a higher layer,
+which is a router-level fix outside both the CLOCK_PERIOD scope of this stage
+and the frozen `rtl/`. Noted as a recommendation, not run.
+
+*Tools.* OpenLane 1.1.1, OpenROAD antenna checker and global router, Magic,
+netgen, KLayout, `md5sum`.
+
 ## Bugs
 
 
@@ -1733,3 +1875,62 @@ throughput. Copying the 854 MB of finished run output back out to Windows took
 
 *Tools.* Docker Desktop 4.87.0 with Engine 29.7.2, OpenLane 1.1.1, Magic,
 netgen, volare.
+
+**B8 — Tightening CLOCK_PERIOD from 20 ns to 12 ns produced a bit-identical
+implementation, because OpenLane optimises at one corner and signs off at
+another.** Stage B pass 1 set `CLOCK_PERIOD` to 12.000 ns, 0.6164 ns below the
+measured 12.6164 ns critical path, expecting OpenROAD to work harder under the
+tighter constraint. Signoff reported setup WNS **-0.6164 ns** at the max RC
+corner / Slowest lib — exactly the baseline +7.3836 ns shifted by the -8.0000 ns
+period delta, to four decimal places. A slack that moves by precisely the change
+in constraint means the path did not change at all.
+
+*How it was caught.* Not by the slack number, which on its own looks like an
+ordinary failed timing run. `md5sum` on the two runs' outputs:
+
+| Artifact | run_lvs2 (20 ns) | sb_12p000 (12 ns) |
+|---|---|---|
+| `results/synthesis/mesh_top_timing.v` | `64508735...` | `64508735...` |
+| `results/final/verilog/gl/mesh_top_timing.v` | `cdd6b31f...` | `cdd6b31f...` |
+| `results/routing/mesh_top_timing.def` | `c2973d12...` | `c2973d12...` |
+| `results/final/def/mesh_top_timing.def` | `c2973d12...` | `c2973d12...` |
+
+Bit-identical netlist and bit-identical layout. Every derived metric agreed
+too: 8183 cells, 97190.7136 um2, 71602 placed instances, 323476.4896 um2 core
+area, 87 diodes, 7205 fill cells, 20 antenna violations at worst ratio 3.27.
+An 8 ns tightening of the constraint changed nothing whatsoever in the design.
+
+*The constraint did propagate.* `results/final/sdc/mesh_top_timing.sdc` carries
+`create_clock -name clk -period 12.0000` against the baseline's `20.0000`, so
+this is not a stale-config or overwrite failure.
+
+*Root cause.* OpenLane's synthesis and its placement and routing resizers
+evaluate timing at the **Typical** corner only —
+`read_liberty -corner Typical .../sky130_fd_sc_hd__tt_025C_1v80.lib` in
+`logs/routing/19-rsz_design_sta.log` — while signoff
+(`logs/signoff/31-rcx_mcsta.max.log`) is multi-corner and the quoted figure is
+the **Slowest** corner, `sky130_fd_sc_hd__ss_100C_1v60.lib`. On this design the
+two corners differ by roughly 6.4 ns of path delay. At a 12 ns period the
+routing-stage STA reports worst setup slack **+6.3241 ns at Typical**, so
+`repair_timing` sees no violation, inserts no buffer and resizes no cell. The
+optimiser was never asked to do anything.
+
+*Consequence for the stage.* `CLOCK_PERIOD` is inert on the implementation for
+every period above the Typical-corner path delay, measured at **6.2447 ns**. In
+that whole range — 20 ns down to about 6.3 ns — the design is one fixed layout
+and 79.26 MHz is a constant, not a floor that tightening will lift. The premise
+that a tighter constraint makes OpenROAD try harder is false anywhere above that
+knee. A tightening sequence only becomes a real experiment below it.
+
+*A second-order effect, verified so it is not mistaken for noise.* The Slowest
+corner's worst slack moved by exactly the period delta, but the Typical corner's
+moved by -7.6124 ns rather than -8.0000. The cause is that OpenLane sets IO
+delays as a fixed fraction of the clock period: `set_input_delay 4.0000` at
+20 ns becomes `2.4000` at 12 ns, i.e. 0.20 x period. IO paths therefore gain
+relief as the period shrinks, and the Typical worst path migrated from an output
+port path (`Endpoint: ep_out_flit[59]`) at 20 ns to an internal flop-to-flop
+path (`Endpoint: _13444_`) at 12 ns. The Slowest corner's worst path is internal
+flop-to-flop at both periods, which is why it tracked the constraint exactly and
+why the headline figure is an internal path rather than an I/O artefact.
+
+*Tools.* OpenLane 1.1.1, OpenROAD resizer and OpenSTA, Yosys, `md5sum`.

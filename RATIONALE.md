@@ -82,9 +82,12 @@ write so arbitration starts from a flop (costs width, not latency); reduce that
 high-fanout net. A Sky130 ASIC run changes the emphasis but not the answer: the
 same architectural path is critical there (FIFO read → route/arbitrate →
 crossbar → downstream FIFO write), but it is gate-delay-limited rather than
-wire-limited — 17 standard cells deep, with the largest contributors being cell
+wire-limited — 13 standard cells deep, with the largest contributors being cell
 arcs rather than a net. So fix 3 is FPGA-specific, while fixes 1 and 2, which
-cut logic depth, are what would help on both.
+cut logic depth, are what would help on both. That depth is itself evidence for
+fixes 1 and 2: the loose 20 ns pass produced a 17-cell path, and the Stage B
+tightening cut it to 13 by remapping to fewer, higher-drive stages, which is
+where its +21.9% came from.
 
 **10 — What the testbench checks, and misses.** One scoreboard gives four
 properties at once: every injected flit is recorded against its destination, and

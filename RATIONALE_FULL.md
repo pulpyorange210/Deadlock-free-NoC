@@ -11,8 +11,17 @@ clock.
 −1)**, from post-implementation timing after place and route — worst negative
 slack +0.429 ns against a 6.200 ns constraint. Hold slack +0.040 ns, positive at
 every one of 2514 endpoints. 989 LUTs, 421 flip-flops, 0 block RAMs. This is an
-FPGA number; 88% of the critical path is routing delay, and the same RTL on an
-ASIC standard-cell process would run several times faster.
+FPGA number; 88% of the critical path is routing delay.
+
+The Sky130 counterpart was measured rather than assumed, and it came out
+**slower, not faster: 96.6 MHz**, a 10.351 ns critical path at the Slowest
+corner. Sky130 is a 130 nm process against the Kintex-7's 28 nm, so the
+standard-cell parts are not faster than the FPGA's hard silicon; what changes is
+the character of the path, which becomes gate-delay-limited rather than
+wire-limited — 13 standard cells deep, dominated by cell arcs instead of a
+routing net. An earlier draft of this document predicted an ASIC would run
+several times faster; that prediction is left recorded here as wrong, since the
+measurement is the point of the exercise.
 
 Verification is 117 assertions at router level across two coordinate
 configurations and 109 at mesh level covering all seven required test cases plus
