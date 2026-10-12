@@ -87,7 +87,7 @@ would need.
 | `reports/` | Vivado timing, path and utilization reports; `reports/asic/` holds the Sky130 signoff evidence |
 | `RATIONALE.md` | One-page answers to the twelve design questions |
 | `RATIONALE_FULL.md` | Long form, with the evidence behind each answer |
-| `ENGINEERING_LOG.md` | 37 design decisions and 8 bug entries, written during the build |
+| `ENGINEERING_LOG.md` | 37 design decisions and 9 bug entries, written during the build |
 
 Nothing that is not synthesizable goes in `rtl/`. `impl/mesh_top_timing.v` is a
 synthesis-only wrapper that registers every endpoint port so implementation
@@ -207,11 +207,13 @@ docker run --rm --platform linux/amd64 \
            -ignore_mismatches
 
 # Copy results back (bulk writes out to the host are fast; it is the reads in
-# that are pathological)
+# that are pathological). runs/ is gitignored, so a fresh clone does not have
+# it: the mkdir is required, or cp makes runs/ itself a copy of run1.
 docker run --rm --platform linux/amd64 \
   -v noc_work:/work -v "$PWD":/host --entrypoint sh \
   efabless/openlane@sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229 \
-  -c 'cp -a /work/openlane/mesh_top_timing/runs/run1 \
+  -c 'mkdir -p /host/openlane/mesh_top_timing/runs && \
+      cp -a /work/openlane/mesh_top_timing/runs/run1 \
         /host/openlane/mesh_top_timing/runs/'
 ```
 

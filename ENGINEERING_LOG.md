@@ -2215,3 +2215,56 @@ flop-to-flop at both periods, which is why it tracked the constraint exactly and
 why the headline figure is an internal path rather than an I/O artefact.
 
 *Tools.* OpenLane 1.1.1, OpenROAD resizer and OpenSTA, Yosys, `md5sum`.
+
+**B9 — The README's OpenLane copy-back step misplaced results on a fresh clone,
+because `runs/` is gitignored and so does not exist there.**
+*Symptom.* The last README command, `cp -a /work/.../runs/run1
+/host/openlane/mesh_top_timing/runs/`, exited 0 but put the run at
+`openlane/mesh_top_timing/runs/metrics-and-all` level: `runs/reports/`,
+`runs/results/` and so on, with no `run1/` directory. Every path the README and
+`reports/asic/README.md` give under `runs/run1/` was therefore missing.
+*Caught by.* The fresh-clone reproduction below, the first time the README's
+OpenLane block was run from a clone rather than from the working copy, where
+`runs/` already existed from earlier runs and hid the problem.
+*Root cause.* When the destination directory does not exist, `cp -a SRC DST/`
+creates `DST` as a copy of `SRC` rather than copying `SRC` into it, and a
+gitignored directory is never present in a clone.
+*Fix.* The command now runs `mkdir -p /host/openlane/mesh_top_timing/runs`
+before the `cp`. Re-run against an empty destination, it exits 0 and produces
+`runs/run1/reports/metrics.csv` as documented.
+
+*The reproduction that found it, and what it showed.* Commit `b450942` was
+cloned from GitHub into an empty directory, and the README's OpenLane block was
+run verbatim except for using two new, empty volumes (`noc_work_repro`,
+`noc_pdk_repro`), since the staging step's `rm -rf /work/openlane/*/runs` would
+otherwise have wiped the stored Stage B runs. So the PDK was fetched from scratch
+by `volare`. `docker pull` by the pinned digest exited 0, as did the PDK fetch,
+staging and the copy-back. The flow exited 255 with `Flow failed` on a Typical-corner
+setup violation, which is the documented, intended result at 3.000 ns (B8). The
+flow took 13 m 22 s.
+
+Against the published `sb_03p000` row of `reports/metrics.csv`, **89 of 93
+columns are identical**. The four that differ are the run tag, `total_runtime`,
+`routed_runtime` and `Peak_Memory_Usage_MB`. Identical columns include
+synth_cell_count 8183, TotalCells 72220, CoreArea 329739.9968 µm², wire length
+344140, vias 71053, every WNS/TNS figure, critical_path_ns 3.91, routing, Magic
+and KLayout violations 0, lvs_total_errors 0, and 17 pin / 16 net antenna
+violations. The Slowest-corner report gives data arrival 4.04 ns and slack
+−0.41 ns in both. KLayout XOR reported no differences, and the LVS report reads
+`Total errors = 0`.
+
+The final GDSII files differ in raw SHA-256 (`c6bd0d71…` published, `109365ea…`
+reproduced). After zeroing the timestamp payload of all 170 BGNLIB/BGNSTR
+records, both hash to `0432491de021342b80e2ce5dac7bcc22486902be0f1c5915381fdb4eb8a4ac11`.
+The layout a stranger gets from the README is byte-identical to the one the
+published numbers describe, and the only difference is when it was written.
+
+The other README commands were also run from the same clone. Icarus `tb_router`
+gave PASS 117 checks, `tb_mesh` gave PASS 109, and the `DATA_W` 64 /
+`FIFO_DEPTH` 8 prefix-file sweep gave PASS 121, the documented count at depth 8.
+The flattened Yosys run reported `Found and reported 0 problems.` and
+`Found 0 SCCs.` Vivado was not re-run from the clone.
+
+*Tools.* git, Docker Desktop with the pinned OpenLane 1.1.1 image, volare,
+Icarus Verilog, Yosys, and a short Python GDSII record walker run inside the
+OpenLane container.
