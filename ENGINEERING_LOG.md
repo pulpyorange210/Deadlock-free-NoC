@@ -2219,10 +2219,11 @@ why the headline figure is an internal path rather than an I/O artefact.
 **B9 — The README's OpenLane copy-back step misplaced results on a fresh clone,
 because `runs/` is gitignored and so does not exist there.**
 *Symptom.* The last README command, `cp -a /work/.../runs/run1
-/host/openlane/mesh_top_timing/runs/`, exited 0 but put the run at
-`openlane/mesh_top_timing/runs/metrics-and-all` level: `runs/reports/`,
-`runs/results/` and so on, with no `run1/` directory. Every path the README and
-`reports/asic/README.md` give under `runs/run1/` was therefore missing.
+/host/openlane/mesh_top_timing/runs/`, exited 0 but put the run's contents
+directly in `runs/` (`runs/reports/`, `runs/results/` and so on), with no
+`run1/` directory. The README's own pointer to the signed-off frequency,
+`reports/signoff/*-sta-rcx_max/` under the run, was therefore not where a reader
+following it would look.
 *Caught by.* The fresh-clone reproduction below, the first time the README's
 OpenLane block was run from a clone rather than from the working copy, where
 `runs/` already existed from earlier runs and hid the problem.
