@@ -9,7 +9,8 @@
 // `full` is a pure function of the registered occupancy count. It deliberately
 // does NOT bypass a simultaneous pop: making `full` depend on rd_en would put
 // the upstream `ready` on a combinational path through arbitration and grant,
-// which is the combinational loop CLAUDE.md warns about. The cost is one slot
+// which is the backpressure combinational loop the design must never contain
+// (`full` -> request masking -> grant -> crossbar). The cost is one slot
 // of throughput at the full mark; the benefit is that no such loop can exist.
 //----------------------------------------------------------------------------
 module fifo #(

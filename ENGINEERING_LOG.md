@@ -1814,6 +1814,91 @@ paragraph now points here. *Tools.* OpenSTA multi-corner reports from the
 `run_lvs2` and `sb_03p000` run directories, `awk` for the column sums, and the
 `run_lvs2` gate-level netlist for the flop mapping. No flow was re-run.
 
+
+**D36 — The OpenLane image is pinned by digest and by platform, not by the
+`latest` tag.**
+Every docker command in `README.md` referenced `efabless/openlane:latest`. A
+moving tag means a stranger following the README gets whatever OpenLane is
+current on the day they clone, not the one that produced the numbers beside the
+instructions — which breaks the requirement that a stranger can clone the repo
+and reproduce its numbers, silently and at an unpredictable future date. All
+four references in `README.md` now read
+`efabless/openlane@sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229`.
+
+*What the digest is.* The `RepoDigests[0]` of the locally pulled
+`efabless/openlane:latest`, confirmed against the remote registry with
+`docker manifest inspect` as a valid multi-architecture manifest list (amd64 and
+arm64), so the pinned reference is pullable by someone who has never had the
+tag. OpenLane version 1.1.1.
+
+*How it was confirmed to be the image the runs actually used.* Not by date —
+the image reports a `Created` timestamp of `1970-01-01T00:00:01Z`, a
+reproducible-build epoch, and its image ID happens to equal its manifest digest
+under the containerd image store, so neither field carries provenance. The
+evidence is the nix store paths instead. `run_lvs2` (Stage A) recorded three:
+`xpc7xd67rslanlqh566s6jph53bn830w-openlane1-1.1.1`,
+`sx2v0i73mn1ih2z1nk61pm9n5gjgpidy-yosys` and
+`wq2q0njg3sx8wvj2akz7x1qxwyrv9xlr-yosys-abc`; `sb_03p000` (Stage B, the run the
+96.6 MHz figure comes from) recorded the same openlane1 path. All three exist,
+byte-identically, in the image now carrying that digest.
+
+That check is stronger than it first looks. A nix store path is a content hash
+of the derivation output, and `flow.tcl` — which pins openroad, magic, netgen,
+klayout, opensta, iverilog and verilator by their own exact nix hashes — lives
+*inside* the `xpc7xd67…-openlane1-1.1.1` derivation. An identical openlane1 hash
+therefore implies every tool binary in the flow is identical, not merely that
+OpenLane's version string matches. Had `latest` moved to a different build since
+the runs, these hashes would differ. They do not.
+
+*Amendment: the index digest alone was not sufficient.*
+`sha256:26719ced…` is a manifest **list**, not a single image — it covers
+`linux/amd64` and `linux/arm64`. Docker resolves a manifest list to the host's
+architecture silently, so on an ARM machine that same digest yields the arm64
+variant: a separate build whose nix store paths differ from the ones recorded by
+`run_lvs2` and `sb_03p000` by construction, since a nix output hash is
+platform-specific. The identity argument above, and therefore every published
+ASIC number, holds for amd64 only. Pinning the index digest without the platform
+left exactly the hole the pin was meant to close, just a narrower one.
+
+`docker image inspect` reports the local image as `Architecture: amd64`,
+`Os: linux`, on an `x86_64` daemon, so both runs used the amd64 variant. Its
+per-platform manifest digest is
+`sha256:764bc72b66d4d3d1b168d6cb307bcac0b169cf847f663dc3aaf38b06d0099285`
+(the arm64 sibling, recorded only to identify what is *not* being claimed, is
+`sha256:840fe28388494220dae9e2be6cf3c7cb2dadfa0eabae4144f0873b9ee949597f`).
+Every `docker run` in `README.md` now carries
+`--platform linux/amd64`, which also lets an ARM host reproduce the published
+numbers under emulation — slower, but the identical binaries. The arm64 variant
+was not pulled or inspected; that its nix paths differ is a structural property
+of per-platform nix builds, not something measured here.
+
+*Tools.* Docker Desktop 4.87.0 / Engine 29.7.2 (`docker inspect`,
+`docker manifest inspect` for the per-platform digests, `docker image inspect`
+by digest and for the `Architecture` field, `docker info` for the daemon
+architecture), `grep` over the `run_lvs2` and `sb_03p000` run directories for
+the recorded nix store paths. No flow was re-run and no RTL, testbench or
+OpenLane config was touched.
+
+**D37 — One post-freeze edit to `rtl/`, comment-only, proven not to change the
+netlist.** The header comment of `rtl/fifo.v` justified `full` not bypassing a
+simultaneous pop by pointing at a hazard list in a file that is not part of the
+repo, which left a reader with nothing to follow. The comment now names the loop
+it avoids directly: `full` → request masking → grant → crossbar, which a
+pop-bypassing `full` would close through the upstream `ready`. No code changed.
+
+Because the RTL was frozen before Stages A and B, any `rtl/` edit would normally
+invalidate every FPGA and ASIC number. This one is shown not to. The flattened
+Yosys run (`hierarchy -top mesh_top; flatten; proc; opt; fsm; opt; memory; opt;
+techmap; opt; check -assert; scc`) was taken before and after the edit; the
+`stat` output and the `write_verilog -noattr` netlist are **byte-identical**
+(matching SHA-256), `check -assert` reports no problems and `scc` finds 0 SCCs.
+The Icarus `tb_mesh` regression still reports **PASS, 109 checks, 0 errors**
+(2376 injected, 2364 ejected, 12 discarded by reset, 0 outstanding, 0 unmatched).
+Every published number therefore still comes from the RTL in the repo.
+
+*Tools.* Yosys (oss-cad-suite), Icarus Verilog `iverilog`/`vvp`, PowerShell
+`Get-FileHash`.
+
 ## Bugs
 
 

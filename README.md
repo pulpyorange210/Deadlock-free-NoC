@@ -87,7 +87,7 @@ would need.
 | `reports/` | Vivado timing, path and utilization reports; `reports/asic/` holds the Sky130 signoff evidence |
 | `RATIONALE.md` | One-page answers to the twelve design questions |
 | `RATIONALE_FULL.md` | Long form, with the evidence behind each answer |
-| `ENGINEERING_LOG.md` | 35 design decisions and 8 bug entries, written during the build |
+| `ENGINEERING_LOG.md` | 37 design decisions and 8 bug entries, written during the build |
 
 Nothing that is not synthesizable goes in `rtl/`. `impl/mesh_top_timing.v` is a
 synthesis-only wrapper that registers every endpoint port so implementation
@@ -156,6 +156,18 @@ vivado -mode batch -source impl/run_impl.tcl \
 ```bash
 # OpenLane / Sky130, via Docker.
 #
+# Every ASIC number in this repo was produced by OpenLane 1.1.1 at image
+# digest sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229,
+# pinned here rather than :latest so the flow stays reproducible after the tag
+# moves. That digest is a manifest LIST covering two architectures, so it is
+# pinned further with --platform linux/amd64 on every run below: the numbers
+# were produced on linux/amd64, whose per-platform digest is
+# sha256:764bc72b66d4d3d1b168d6cb307bcac0b169cf847f663dc3aaf38b06d0099285. An
+# ARM host resolves the same list to the arm64 variant, which is a separate
+# build with different binaries; pass --platform linux/amd64 there too and
+# Docker runs this image under emulation — far slower, but the identical
+# binaries that produced the published results.
+#
 # On Windows and macOS hosts, BOTH the design and the PDK must live in
 # container-local volumes. Magic's SPICE extraction is dominated by small-file
 # reads of the PDK, and over a host bind mount each one is a cross-OS RPC: the
@@ -167,14 +179,16 @@ docker volume create noc_work && docker volume create noc_pdk
 
 # PDK: fetch the pinned version straight into the volume. Do not copy it in
 # from the host -- that copy is the same small-file pathology.
-docker run --rm -v noc_pdk:/pdk -e PDK_ROOT=/pdk \
-  --entrypoint sh efabless/openlane:latest -c \
-  'volare enable --pdk sky130 c6d73a35f524070e85faff4a6a9eef49553ebc2b'
+docker run --rm --platform linux/amd64 \
+  -v noc_pdk:/pdk -e PDK_ROOT=/pdk --entrypoint sh \
+  efabless/openlane@sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229 \
+  -c 'volare enable --pdk sky130 c6d73a35f524070e85faff4a6a9eef49553ebc2b'
 
 # Design: stage in (host read-only so the run cannot write back into the repo)
-docker run --rm -v noc_work:/work -v "$PWD":/host:ro \
-  --entrypoint sh efabless/openlane:latest -c \
-  'cp -r /host/openlane /host/rtl /host/impl /work/ && rm -rf /work/openlane/*/runs'
+docker run --rm --platform linux/amd64 \
+  -v noc_work:/work -v "$PWD":/host:ro --entrypoint sh \
+  efabless/openlane@sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229 \
+  -c 'cp -r /host/openlane /host/rtl /host/impl /work/ && rm -rf /work/openlane/*/runs'
 
 # Run. -ignore_mismatches is needed because the installed open_pdks revision is
 # one newer than the version pinned in the image.
@@ -186,17 +200,19 @@ docker run --rm -v noc_work:/work -v "$PWD":/host:ro \
 # check runs after every signoff step, so LVS, DRC, XOR, the antenna check and
 # reports/metrics.csv are all produced and valid. Read the signed-off frequency
 # from reports/signoff/*-sta-rcx_max/, not from the exit code.
-docker run --rm -v noc_work:/work -v noc_pdk:/pdk \
-  -e PDK_ROOT=/pdk -e PDK=sky130A efabless/openlane:latest \
+docker run --rm --platform linux/amd64 \
+  -v noc_work:/work -v noc_pdk:/pdk -e PDK_ROOT=/pdk -e PDK=sky130A \
+  efabless/openlane@sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229 \
   flow.tcl -design /work/openlane/mesh_top_timing -tag run1 -overwrite \
            -ignore_mismatches
 
 # Copy results back (bulk writes out to the host are fast; it is the reads in
 # that are pathological)
-docker run --rm -v noc_work:/work -v "$PWD":/host \
-  --entrypoint sh efabless/openlane:latest -c \
-  'cp -a /work/openlane/mesh_top_timing/runs/run1 \
-       /host/openlane/mesh_top_timing/runs/'
+docker run --rm --platform linux/amd64 \
+  -v noc_work:/work -v "$PWD":/host --entrypoint sh \
+  efabless/openlane@sha256:26719ced90c315b8b4ad7b9dc3e9a176991cea4c3f3282660d8d60d0f0cae229 \
+  -c 'cp -a /work/openlane/mesh_top_timing/runs/run1 \
+        /host/openlane/mesh_top_timing/runs/'
 ```
 
 ## Verification
